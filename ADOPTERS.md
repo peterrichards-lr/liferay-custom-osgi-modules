@@ -15,17 +15,20 @@ consuming a module in a way its author would not expect, say so in the notes
 | Project | Module | Since | Notes |
 |---|---|---|---|
 | [liferay-docker-manager](https://github.com/peterrichards-lr/liferay-docker-manager) | `fragment-override` | *pending* | Drove the module. Currently still on its direct-SQL workaround; will switch once the module is implemented and the two configuration routes in the README are ruled out. See [#1601](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1601). |
+| [liferay-ai-commerce-accelerator](https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator) | `search-reindex` | *pending* | Adopted from `aica-reindex-endpoint`. Triggers asynchronous search reindexing for arbitrary entity classes where no Headless REST or GraphQL mutation exists. Answers on `/search-reindex` and backward-compatible alias `/aica-reindex`. See [#4](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/4). |
 
 ## Contributors of modules
 
 | Project | Module | Notes |
 |---|---|---|
-| — | — | *none yet* |
+| [liferay-ai-commerce-accelerator](https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator) | `search-reindex` | Contributed original `aica-reindex-endpoint` implementation. |
 
 ## Not here
 
-Modules that are specific to one project stay with that project. The AI
-Commerce Accelerator's `com.liferay.accelerator.reindex.endpoint` is an example
-— it is product logic, not a platform workaround, so it belongs in AICA. If
-AICA later has a module that solves a general Liferay limitation, it is welcome
-here and should be listed above.
+Modules that are specific to one project stay with that project. If a project
+develops a module that solves a general, platform-level Liferay limitation
+affecting more than one tool, it is welcome here and should be listed above.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-09-04* | *Last Reviewed: 2026-09-04*
