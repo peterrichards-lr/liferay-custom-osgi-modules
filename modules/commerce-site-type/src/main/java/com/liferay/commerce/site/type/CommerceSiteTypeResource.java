@@ -8,6 +8,7 @@ import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
 import com.liferay.portal.kernel.model.Group;
 import com.liferay.portal.kernel.model.User;
+import com.liferay.portal.kernel.security.permission.ActionKeys;
 import com.liferay.portal.kernel.security.permission.PermissionChecker;
 import com.liferay.portal.kernel.security.permission.PermissionThreadLocal;
 import com.liferay.portal.kernel.service.ClassNameLocalServiceUtil;
@@ -30,6 +31,10 @@ import jakarta.ws.rs.core.Response;
 
 public class CommerceSiteTypeResource {
 
+	/**
+	 * Unauthenticated deployment liveness/readiness probe.
+	 * Confirms the bundle is active and whiteboard endpoint is mounted.
+	 */
 	@GET
 	@Path("/status")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -56,7 +61,7 @@ public class CommerceSiteTypeResource {
 					"Parameter 'channelId' must be a positive integer.");
 			}
 
-			Response authResponse = _checkAuthenticationAndAuthorization(httpServletRequest);
+			Response authResponse = _checkAuthentication(httpServletRequest);
 
 			if (authResponse != null) {
 				return authResponse;
@@ -74,6 +79,12 @@ public class CommerceSiteTypeResource {
 					"Commerce channel group not found for channelId " + channelId + ".");
 			}
 
+			Response permissionResponse = _checkAuthorization(httpServletRequest, companyId, group, channelId);
+
+			if (permissionResponse != null) {
+				return permissionResponse;
+			}
+
 			GroupServiceSettingsLocator locator = new GroupServiceSettingsLocator(
 				group.getGroupId(), "com.liferay.commerce.account");
 
@@ -82,7 +93,10 @@ public class CommerceSiteTypeResource {
 			try {
 				settings = FallbackKeysSettingsUtil.getSettings(locator);
 			}
-			catch (Throwable throwable) {
+			catch (Exception | LinkageError exception) {
+				if (_log.isDebugEnabled()) {
+					_log.debug("FallbackKeysSettingsUtil failed; falling back to locator.getSettings()", exception);
+				}
 				settings = locator.getSettings();
 			}
 
@@ -98,7 +112,11 @@ public class CommerceSiteTypeResource {
 			String siteTypeLabel;
 			String[] allowedAccountTypes;
 
-			if (siteType == 1) {
+			if (siteType == 0) {
+				siteTypeLabel = "B2C";
+				allowedAccountTypes = new String[]{"person"};
+			}
+			else if (siteType == 1) {
 				siteTypeLabel = "B2B";
 				allowedAccountTypes = new String[]{"business", "supplier"};
 			}
@@ -107,9 +125,9 @@ public class CommerceSiteTypeResource {
 				allowedAccountTypes = new String[]{"business", "person", "supplier"};
 			}
 			else {
-				siteType = 0;
-				siteTypeLabel = "B2C";
-				allowedAccountTypes = new String[]{"person"};
+				siteTypeLabel = "UNKNOWN";
+				allowedAccountTypes = new String[0];
+				configured = false;
 			}
 
 			JSONObject responseJSON = JSONFactoryUtil.createJSONObject();
@@ -136,7 +154,7 @@ public class CommerceSiteTypeResource {
 		}
 	}
 
-	private Response _checkAuthenticationAndAuthorization(HttpServletRequest httpServletRequest)
+	private Response _checkAuthentication(HttpServletRequest httpServletRequest)
 		throws PortalException {
 
 		User user = PortalUtil.getUser(httpServletRequest);
@@ -147,15 +165,25 @@ public class CommerceSiteTypeResource {
 				"Authentication is required to access commerce site type.");
 		}
 
+		return null;
+	}
+
+	private Response _checkAuthorization(
+			HttpServletRequest httpServletRequest, long companyId, Group group, long channelId) {
+
 		PermissionChecker permissionChecker = PermissionThreadLocal.getPermissionChecker();
 
-		if (permissionChecker == null || !permissionChecker.isOmniadmin()) {
-			return _jsonError(
-				Response.Status.FORBIDDEN, "Forbidden",
-				"Omniadmin permissions are required to access commerce site type.");
+		if (permissionChecker != null &&
+			(permissionChecker.isOmniadmin() ||
+			 permissionChecker.isCompanyAdmin(companyId) ||
+			 permissionChecker.hasPermission(group.getGroupId(), "com.liferay.commerce.product.model.CommerceChannel", channelId, ActionKeys.VIEW) ||
+			 permissionChecker.hasPermission(group.getGroupId(), Group.class.getName(), group.getGroupId(), ActionKeys.VIEW))) {
+			return null;
 		}
 
-		return null;
+		return _jsonError(
+			Response.Status.FORBIDDEN, "Forbidden",
+			"Omniadmin, company admin, or channel/group VIEW permissions are required to access commerce site type.");
 	}
 
 	private Response _jsonError(Response.Status status, String error, String message) {

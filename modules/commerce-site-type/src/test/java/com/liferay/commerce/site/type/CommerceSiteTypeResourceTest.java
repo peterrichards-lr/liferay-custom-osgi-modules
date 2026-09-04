@@ -6,6 +6,7 @@ import com.liferay.portal.kernel.json.JSONFactoryUtil;
 import com.liferay.portal.kernel.json.JSONObject;
 import com.liferay.portal.kernel.model.Group;
 import com.liferay.portal.kernel.model.User;
+import com.liferay.portal.kernel.security.permission.ActionKeys;
 import com.liferay.portal.kernel.security.permission.PermissionChecker;
 import com.liferay.portal.kernel.security.permission.PermissionThreadLocal;
 import com.liferay.portal.kernel.service.ClassNameLocalService;
@@ -122,17 +123,45 @@ public class CommerceSiteTypeResourceTest {
 	}
 
 	@Test
-	public void testGetSiteType_NonOmniadmin_ReturnsForbidden() throws Exception {
+	public void testGetSiteType_NonOmniadminWithoutViewPermission_ReturnsForbidden() throws Exception {
 		_setupAuthenticatedUser();
+		_setupChannelGroupAndSettings("1", true);
 
 		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
 		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(false);
+		Mockito.when(permissionChecker.isCompanyAdmin(Mockito.anyLong())).thenReturn(false);
+		Mockito.when(permissionChecker.hasPermission(
+			Mockito.anyLong(), Mockito.anyString(), Mockito.anyLong(), Mockito.anyString()
+		)).thenReturn(false);
 		PermissionThreadLocal.setPermissionChecker(permissionChecker);
 
 		Response response = _resource.getSiteType(_httpServletRequest, 34562L);
 
 		Assert.assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
 		Assert.assertTrue(response.getEntity().toString().contains("\"error\":\"Forbidden\""));
+	}
+
+	@Test
+	public void testGetSiteType_NonOmniadminWithChannelViewPermission_Succeeds() throws Exception {
+		_setupAuthenticatedUser();
+		_setupChannelGroupAndSettings("1", true);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(false);
+		Mockito.when(permissionChecker.isCompanyAdmin(Mockito.anyLong())).thenReturn(false);
+		Mockito.when(permissionChecker.hasPermission(
+			Mockito.eq(34563L), Mockito.eq("com.liferay.commerce.product.model.CommerceChannel"),
+			Mockito.eq(34562L), Mockito.eq(ActionKeys.VIEW)
+		)).thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _resource.getSiteType(_httpServletRequest, 34562L);
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		String json = response.getEntity().toString();
+		Assert.assertTrue(json.contains("\"channelId\":34562"));
+		Assert.assertTrue(json.contains("\"siteType\":1"));
+		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2B\""));
 	}
 
 	@Test
@@ -211,7 +240,7 @@ public class CommerceSiteTypeResourceTest {
 	}
 
 	@Test
-	public void testGetSiteType_UnknownSiteTypeValue_DefaultsToB2C() throws Exception {
+	public void testGetSiteType_UnknownSiteTypeValue_ReportsUnknownAndUnconfigured() throws Exception {
 		_setupOmniadmin();
 		_setupChannelGroupAndSettings("99", true);
 
@@ -220,9 +249,10 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
 		String json = response.getEntity().toString();
 		Assert.assertTrue(json.contains("\"channelId\":34562"));
-		Assert.assertTrue(json.contains("\"siteType\":0"));
-		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2C\""));
-		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[\"person\"]"));
+		Assert.assertTrue(json.contains("\"siteType\":99"));
+		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"UNKNOWN\""));
+		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[]"));
+		Assert.assertTrue(json.contains("\"configured\":false"));
 	}
 
 	private void _setupOmniadmin() throws Exception {

@@ -130,15 +130,33 @@ a site type configuration until saved in admin; Liferay defaults `commerceSiteTy
 `0` (B2C) while account configuration defaults to B2X. When `configured` is `false`,
 consumers know no explicit site type was persisted and can fail open.
 
+**Scope of `configured`:** The `configured` flag reflects modifications at the
+channel's group scope. When `configured` is `false`, it indicates that no explicit
+`commerceSiteType` configuration was saved at group scope; consumers should treat
+this as unconfigured and fail open.
+
 Site types supported:
 - `0`: `B2C` (allowed account types: `["person"]`)
 - `1`: `B2B` (allowed account types: `["business", "supplier"]`)
 - `2`: `B2X` (allowed account types: `["business", "person", "supplier"]`)
 
+Unrecognized site types (e.g. future DXP values other than 0, 1, 2) return the raw integer,
+`siteTypeLabel: "UNKNOWN"`, `allowedAccountTypes: []`, and force `configured: false`.
+
 #### Status Healthcheck
 ```
 GET /o/commerce-site-type/status
 ```
+
+The `/status` healthcheck is intentionally unauthenticated as a lightweight
+deployment readiness probe to verify that the module is installed and responding.
+
+#### Security & Permissions
+
+- **Authentication**: Unauthenticated / guest requests return HTTP 401 `Unauthorized`.
+- **Authorization**: Callers require omniadmin, company admin, or `VIEW` permission on the
+  channel or its group (`com.liferay.commerce.product.model.CommerceChannel`). Unauthorized
+  callers return HTTP 403 `Forbidden`.
 
 ## Building
 
