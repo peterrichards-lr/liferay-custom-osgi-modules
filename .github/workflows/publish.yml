@@ -112,7 +112,7 @@ jobs:
           ls -l dist
 
           staged=$(ls dist/*.jar 2>/dev/null | wc -l | tr -d ' ')
-          modules=$(ls -d modules/*/ 2>/dev/null | wc -l | tr -d ' ')
+          modules=$(ls -d modules/*/bnd.bnd 2>/dev/null | wc -l | tr -d ' ')
 
           if [ "$staged" -eq 0 ]; then
             echo "::error::no jars were staged"
@@ -120,7 +120,8 @@ jobs:
           fi
 
           if [ "$staged" -ne "$modules" ]; then
-            echo "::error::staged $staged jars for $modules modules"
+            echo "::error::staged $staged jars for $modules bundle modules (modules/*/bnd.bnd)"
+            echo "::error::Every OSGi bundle module under modules/ is expected to produce exactly one release asset in dist/."
             ls -l dist
             exit 1
           fi
