@@ -79,8 +79,13 @@ jobs:
           exit $status
 
       - name: Publish to GitHub Packages
+        # -Pversion must be passed here too. Without it the publish resolves to
+        # the project default (1.0.0-SNAPSHOT), which publishes the wrong Maven
+        # coordinate *and* leaves a second jar in build/libs that the staging
+        # step below then globs - v1.0.0 shipped with both a 1.0.0 and a
+        # 1.0.0-SNAPSHOT asset for every module because of this.
         if: github.event_name == 'release' || inputs.dry_run == false
-        run: ./gradlew publish --no-daemon
+        run: ./gradlew publish --no-daemon -Pversion="${{ steps.ver.outputs.version }}"
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -93,7 +98,11 @@ jobs:
         if: github.event_name == 'release'
         run: |
           mkdir -p dist
-          for jar in modules/*/build/libs/*.jar; do
+          # Match the release version explicitly rather than globbing every
+          # jar: `clean` alone does not guarantee build/libs holds only what
+          # this run produced, and an unexpected jar here becomes a published
+          # asset.
+          for jar in modules/*/build/libs/*-${{ steps.ver.outputs.version }}.jar; do
             [ -e "$jar" ] || continue
             base=$(basename "$jar" .jar)
             target="dist/${base}-${{ steps.ver.outputs.dxp }}.jar"
