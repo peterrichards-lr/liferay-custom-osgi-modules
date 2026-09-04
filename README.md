@@ -120,28 +120,24 @@ Returns:
   "channelId": 34562,
   "siteType": 1,
   "siteTypeLabel": "B2B",
+  "siteTypeStatus": "CONFIGURED",
   "allowedAccountTypes": ["business", "supplier"],
   "configured": true
 }
 ```
 
-**The `configured` flag is critical:** Headless channel creation does not persist
-a site type configuration until saved in admin; Liferay defaults `commerceSiteType` to
-`0` (B2C) while account configuration defaults to B2X. When `configured` is `false`,
-consumers know no explicit site type was persisted and can fail open.
+#### Status & Configuration Lifecycle
 
-**Scope of `configured`:** The `configured` flag reflects modifications at the
-channel's group scope. When `configured` is `false`, it indicates that no explicit
-`commerceSiteType` configuration was saved at group scope; consumers should treat
-this as unconfigured and fail open.
+Consumers branch on `siteTypeStatus`:
+
+- **`CONFIGURED`**: Explicitly set in admin to a recognized type (`B2B`, `B2C`, `B2X`). `allowedAccountTypes` contains the allowed types. Consumers validate strictly.
+- **`NOT_CONFIGURED`**: Headless channel creation does not persist a site type until saved in admin; Liferay defaults `commerceSiteType` to `0` (B2C) while account configuration defaults to B2X. When `NOT_CONFIGURED`, `allowedAccountTypes` is empty `[]` and `configured` is `false`. Consumers should warn and fail open. Remedy: operator sets site type in Commerce → Channels.
+- **`UNRECOGNISED`**: Channel is configured to a site type value not recognized by this bundle version (e.g. `3`). Returns raw integer `siteType`, `siteTypeLabel: "UNKNOWN"`, `allowedAccountTypes: []`, and `configured: true`. Consumers should warn and fail open. Remedy: tooling update.
 
 Site types supported:
 - `0`: `B2C` (allowed account types: `["person"]`)
 - `1`: `B2B` (allowed account types: `["business", "supplier"]`)
 - `2`: `B2X` (allowed account types: `["business", "person", "supplier"]`)
-
-Unrecognized site types (e.g. future DXP values other than 0, 1, 2) return the raw integer,
-`siteTypeLabel: "UNKNOWN"`, `allowedAccountTypes: []`, and force `configured: false`.
 
 #### Status Healthcheck
 ```

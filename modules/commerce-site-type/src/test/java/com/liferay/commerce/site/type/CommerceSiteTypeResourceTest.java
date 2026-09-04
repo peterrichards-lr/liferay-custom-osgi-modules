@@ -187,6 +187,7 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"channelId\":34562"));
 		Assert.assertTrue(json.contains("\"siteType\":0"));
 		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2C\""));
+		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"CONFIGURED\""));
 		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[\"person\"]"));
 		Assert.assertTrue(json.contains("\"configured\":true"));
 	}
@@ -203,6 +204,7 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"channelId\":34562"));
 		Assert.assertTrue(json.contains("\"siteType\":1"));
 		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2B\""));
+		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"CONFIGURED\""));
 		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[\"business\",\"supplier\"]"));
 		Assert.assertTrue(json.contains("\"configured\":true"));
 	}
@@ -219,6 +221,7 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"channelId\":34562"));
 		Assert.assertTrue(json.contains("\"siteType\":2"));
 		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2X\""));
+		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"CONFIGURED\""));
 		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[\"business\",\"person\",\"supplier\"]"));
 		Assert.assertTrue(json.contains("\"configured\":true"));
 	}
@@ -235,7 +238,8 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"channelId\":34562"));
 		Assert.assertTrue(json.contains("\"siteType\":0"));
 		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2C\""));
-		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[\"person\"]"));
+		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"NOT_CONFIGURED\""));
+		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[]"));
 		Assert.assertTrue(json.contains("\"configured\":false"));
 	}
 
@@ -251,8 +255,9 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"channelId\":34562"));
 		Assert.assertTrue(json.contains("\"siteType\":99"));
 		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"UNKNOWN\""));
+		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"UNRECOGNISED\""));
 		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[]"));
-		Assert.assertTrue(json.contains("\"configured\":false"));
+		Assert.assertTrue(json.contains("\"configured\":true"));
 	}
 
 	private void _setupOmniadmin() throws Exception {

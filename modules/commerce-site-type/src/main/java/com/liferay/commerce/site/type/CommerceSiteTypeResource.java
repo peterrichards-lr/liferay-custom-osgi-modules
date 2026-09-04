@@ -110,24 +110,33 @@ public class CommerceSiteTypeResource {
 			int siteType = GetterUtil.getInteger(settings.getValue("commerceSiteType", "0"), 0);
 
 			String siteTypeLabel;
+			String siteTypeStatus;
 			String[] allowedAccountTypes;
 
-			if (siteType == 0) {
+			if (!configured) {
+				siteTypeStatus = "NOT_CONFIGURED";
+				siteTypeLabel = (siteType == 0) ? "B2C" : "UNKNOWN";
+				allowedAccountTypes = new String[0];
+			}
+			else if (siteType == 0) {
+				siteTypeStatus = "CONFIGURED";
 				siteTypeLabel = "B2C";
 				allowedAccountTypes = new String[]{"person"};
 			}
 			else if (siteType == 1) {
+				siteTypeStatus = "CONFIGURED";
 				siteTypeLabel = "B2B";
 				allowedAccountTypes = new String[]{"business", "supplier"};
 			}
 			else if (siteType == 2) {
+				siteTypeStatus = "CONFIGURED";
 				siteTypeLabel = "B2X";
 				allowedAccountTypes = new String[]{"business", "person", "supplier"};
 			}
 			else {
+				siteTypeStatus = "UNRECOGNISED";
 				siteTypeLabel = "UNKNOWN";
 				allowedAccountTypes = new String[0];
-				configured = false;
 			}
 
 			JSONObject responseJSON = JSONFactoryUtil.createJSONObject();
@@ -135,6 +144,7 @@ public class CommerceSiteTypeResource {
 			responseJSON.put("channelId", channelId);
 			responseJSON.put("siteType", siteType);
 			responseJSON.put("siteTypeLabel", siteTypeLabel);
+			responseJSON.put("siteTypeStatus", siteTypeStatus);
 
 			JSONArray allowedAccountTypesJSONArray = JSONFactoryUtil.createJSONArray();
 			for (String allowedAccountType : allowedAccountTypes) {
