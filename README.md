@@ -31,12 +31,9 @@ what — add yourself there when you consume or contribute one.
 
 | Module | State | Solves |
 |---|---|---|
-| [`fragment-override`](#fragment-override) | **scaffold only** | Headless API rejects specification updates on published site initializer pages |
+| [`fragment-override`](#fragment-override) | **in development** | Headless API rejects specification updates on published site initializer pages |
 
 ### fragment-override
-
-**Not implemented — deliberately.** The scaffold exists so the design and its
-open questions are recorded somewhere a developer will find them.
 
 The restriction is Liferay's, not any one project's:
 `PUT /o/headless-admin-site/v1.0/sites/{siteId}/site-pages/{sitePageId}`
@@ -61,14 +58,19 @@ FragmentEntryLinkLocalService.updateFragmentEntryLink(
 which routes through the service layer, so cache invalidation, model listeners
 and indexing are Liferay's concern rather than the caller's.
 
-**Two configuration routes must be ruled out before any Java is written**,
-either of which makes this module unnecessary:
+#### Upstream Investigation & Feature Flag
 
-1. A feature flag may already unlock the PUT. The sibling restriction on
-   `POST /v1.0/sites/{siteId}/site-pages` is gated by
-   `feature.flag.LPS-178052=true`.
-2. Site Initializer update support (LPS-165482) exposes a *Synchronize* action
-   that may be the supported path outright.
+Both configuration alternatives were investigated and ruled out:
+1. `feature.flag.LPS-178052=true` only controls `POST /v1.0/sites/{siteId}/site-pages` (creating pages) and does not unlock PUT updates for published initializer pages.
+2. Site Initializer update support (`LPS-165482`) only synchronizes bundled descriptor content from the ZIP; it does not provide dynamic programmatic runtime overrides.
+
+Upstream feature request: [LPD-99955](https://liferay.atlassian.net/browse/LPD-99955).
+
+To prevent accidental or unauthorized writes, this module's PUT endpoint is explicitly gated behind:
+```properties
+feature.flag.LPD-99955=true
+```
+in `portal-ext.properties` (with `feature.flag.LPS-178052=true` accepted as a backward-compatible alias).
 
 Background:
 [liferay-docker-manager#883](https://github.com/peterrichards-lr/liferay-docker-manager/issues/883)
@@ -206,3 +208,7 @@ is currently zero evidence in either direction.
 Doing (3) pre-emptively would be building N pipelines to solve a problem that
 may not exist; doing (1) and (2) costs one module's worth of work and answers
 it for every module afterwards.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-09-04* | *Last Reviewed: 2026-09-04*

@@ -1,3 +1,6 @@
 Bundle-Name: fragment-override
 Bundle-SymbolicName: com.liferay.fragment.override
 Liferay-Configuration-Path: /configuration
+Import-Package:\
+	com.liferay.fragment.service;version="[1.0,10.0)",\
+	*
