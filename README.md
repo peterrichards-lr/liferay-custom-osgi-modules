@@ -164,6 +164,29 @@ deployment readiness probe to verify that the module is installed and responding
   channel or its group (`com.liferay.commerce.product.model.CommerceChannel`). Unauthorized
   callers return HTTP 403 `Forbidden`.
 
+#### Liferay versions
+
+Compiled against `dxp-2026.q1.12-lts`, the workspace pin.
+
+The `Import-Package` ranges in `bnd.bnd` are bounded to the current major of each
+package and are **kernel-only** — `com.liferay.portal.kernel.{exception, json, log,
+model, security.permission, service, settings, util}`. Nothing from a commerce
+bundle is imported: the channel is reached through `GroupLocalServiceUtil` and
+referred to by class-name string, and the site type is read through
+`GroupServiceSettingsLocator` and its company and system counterparts.
+
+**Runtime verification is outstanding.** The 13 unit tests exercise the resolution
+logic with mocks; they do not exercise OSGi wiring, so the ranges above are not yet
+confirmed at either end of any line span. Deploying to a `2026.q1.12-lts` instance
+and to one other line, and confirming the bundle resolves and
+`/o/commerce-site-type/status` answers, is what would settle it.
+
+Until then this module claims only the line it was compiled against. Kernel packages
+change major less often than application packages, so a single artifact spanning
+several lines is plausible — but that is a hypothesis about this import set, not a
+tested claim, and per the resolution above it is a property of the imports rather
+than of the repository.
+
 ## Building
 
 ```bash
