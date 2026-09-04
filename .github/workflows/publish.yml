@@ -112,7 +112,12 @@ jobs:
           ls -l dist
 
           staged=$(ls dist/*.jar 2>/dev/null | wc -l | tr -d ' ')
-          modules=$(ls -d modules/*/build/libs 2>/dev/null | wc -l | tr -d ' ')
+          modules=$(ls -d modules/*/ 2>/dev/null | wc -l | tr -d ' ')
+
+          if [ "$staged" -eq 0 ]; then
+            echo "::error::no jars were staged"
+            exit 1
+          fi
 
           if [ "$staged" -ne "$modules" ]; then
             echo "::error::staged $staged jars for $modules modules"
