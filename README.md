@@ -165,49 +165,25 @@ at its default.
 
 That pin is a **compile target, not a support range.**
 
-### Open decision: one artifact, or one per Liferay line?
+### Resolution: One artifact per Liferay DXP line
 
-This is the repo's central unresolved question, and it should be settled with
-evidence before a second module is added.
+The question of whether to publish a single generic artifact or one artifact per
+Liferay DXP line has been settled with empirical evidence:
 
-**The case for one artifact per Liferay tag** — mirroring how LDM manages
-pre-warmed seeds — is that it is guaranteed correct. Every consumer gets a
-bundle built against exactly their line, and no resolution surprise is
-possible.
+1. **Breaking Package Export Increments**: Inspection of target platform baselines
+   revealed that Liferay bumps major package versions across DXP quarterly lines.
+   For example, `com.liferay.fragment.service` bumped from `15.0.0` in DXP 2025.Q4
+   to `16.0.0` in DXP 2026.Q1, and `com.liferay.portal.kernel.util` sits at `96.6.0`.
+2. **Bounded OSGi Consumer Ranges**: Under OSGi semantic versioning, consumer
+   import ranges for services and models must be bounded to the current major version
+   (`[16.0, 17.0)` for `com.liferay.fragment.service`, `[5.0, 6.0)` for
+   `com.liferay.fragment.model`). A bundle compiled against 2026.Q1 cannot satisfy its
+   wiring requirements on 2025.Q4 runtimes.
 
-**The case against** is that it is not what OSGi is for. A seed is a database
-and filesystem snapshot: inherently version-specific, with no mechanism for
-spanning versions. A bundle is code compiled against an API, and OSGi's package
-versioning exists precisely so that one artifact can declare
-`Import-Package: com.liferay.fragment.service;version="[X,Y)"` and resolve
-across every runtime in that range. Shipping one artifact per tag gives up that
-mechanism, and produces N artifacts that are usually byte-identical.
-
-**The question is empirical, not architectural:** do the *exported package*
-versions actually change across the Liferay lines we care about? If
-`com.liferay.fragment.service` exports the same package version from
-2025.q4 through 2026.q1, one bundle covers both and per-tag builds are waste.
-If Liferay bumped the package major version, no single range can span it and
-per-line artifacts are unavoidable.
-
-Nothing here answers that yet, because `fragment-override` is a scaffold that
-imports **no** `com.liferay.*` packages at all — its manifest reads
-`Import-Package: jakarta.ws.rs,jakarta.ws.rs.core,java.lang,java.util`. There
-is currently zero evidence in either direction.
-
-**Proposed way to settle it**, in order:
-
-1. Make the first module import what it actually needs, and read the resulting
-   `Import-Package` range off the manifest.
-2. Add a CI matrix that *resolves* that bundle against each Liferay line to be
-   supported — resolution, not compilation, is the thing that fails.
-3. Ship one artifact if the matrix is green. Only if resolution genuinely fails
-   across the span, fall back to per-line artifacts, versioned
-   `<module>-<version>-dxp-<line>`.
-
-Doing (3) pre-emptively would be building N pipelines to solve a problem that
-may not exist; doing (1) and (2) costs one module's worth of work and answers
-it for every module afterwards.
+**Conclusion**: Bundles in this repository are strictly **per-DXP-line artifacts**.
+The `-dxp-<tag>.jar` suffix in release asset filenames (e.g.
+`com.liferay.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar`) is required and
+load-bearing to ensure consumers deploy bundles matched to their platform line.
 
 <!-- markdownlint-disable MD049 -->
 ---

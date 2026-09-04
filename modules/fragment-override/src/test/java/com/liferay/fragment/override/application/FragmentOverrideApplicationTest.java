@@ -5,12 +5,17 @@ import com.liferay.fragment.service.FragmentEntryLinkLocalService;
 import com.liferay.portal.kernel.json.JSONFactory;
 import com.liferay.portal.kernel.json.JSONFactoryUtil;
 import com.liferay.portal.kernel.json.JSONObject;
+import com.liferay.portal.kernel.model.Layout;
 import com.liferay.portal.kernel.model.User;
+import com.liferay.portal.kernel.security.permission.ActionKeys;
 import com.liferay.portal.kernel.security.permission.PermissionChecker;
 import com.liferay.portal.kernel.security.permission.PermissionThreadLocal;
 import com.liferay.portal.kernel.service.LayoutLocalService;
+import com.liferay.portal.kernel.service.permission.LayoutPermission;
+import com.liferay.portal.kernel.service.permission.LayoutPermissionUtil;
 import com.liferay.portal.kernel.util.Portal;
 import com.liferay.portal.kernel.util.PortalUtil;
+import com.liferay.portal.kernel.util.PropsUtil;
 
 import java.lang.reflect.Field;
 import java.util.LinkedHashMap;
@@ -42,11 +47,17 @@ public class FragmentOverrideApplicationTest {
 		_portal = Mockito.mock(Portal.class);
 		new PortalUtil().setPortal(_portal);
 
+		_layoutPermission = Mockito.mock(LayoutPermission.class);
+		new LayoutPermissionUtil().setLayoutPermission(_layoutPermission);
+
 		_fragmentEntryLinkLocalService = Mockito.mock(FragmentEntryLinkLocalService.class);
 		_layoutLocalService = Mockito.mock(LayoutLocalService.class);
 		_httpServletRequest = Mockito.mock(HttpServletRequest.class);
 
-		_application = new TestFragmentOverrideApplication();
+		PropsUtil.set("feature.flag.LPD-99955", "false");
+		PropsUtil.set("feature.flag.LPS-178052", "false");
+
+		_application = new FragmentOverrideApplication();
 		_setField(_application, "_fragmentEntryLinkLocalService", _fragmentEntryLinkLocalService);
 		_setField(_application, "_layoutLocalService", _layoutLocalService);
 	}
@@ -54,11 +65,14 @@ public class FragmentOverrideApplicationTest {
 	@After
 	public void tearDown() {
 		PermissionThreadLocal.setPermissionChecker(null);
+		PropsUtil.set("feature.flag.LPD-99955", "false");
+		PropsUtil.set("feature.flag.LPS-178052", "false");
 	}
 
 	@Test
 	public void testStatusFeatureFlagDisabled() {
-		_application.setFeatureFlagEnabled(false);
+		PropsUtil.set("feature.flag.LPD-99955", "false");
+		PropsUtil.set("feature.flag.LPS-178052", "false");
 
 		Response response = _application.status();
 
@@ -67,8 +81,20 @@ public class FragmentOverrideApplicationTest {
 	}
 
 	@Test
-	public void testStatusFeatureFlagEnabled() {
-		_application.setFeatureFlagEnabled(true);
+	public void testStatusFeatureFlagEnabledViaLpd99955() {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		PropsUtil.set("feature.flag.LPS-178052", "false");
+
+		Response response = _application.status();
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		Assert.assertTrue(response.getEntity().toString().contains("\"enabled\":true"));
+	}
+
+	@Test
+	public void testStatusFeatureFlagEnabledViaLps178052Alias() {
+		PropsUtil.set("feature.flag.LPD-99955", "false");
+		PropsUtil.set("feature.flag.LPS-178052", "true");
 
 		Response response = _application.status();
 
@@ -78,7 +104,8 @@ public class FragmentOverrideApplicationTest {
 
 	@Test
 	public void testUpdateFeatureFlagDisabledReturnsForbidden() {
-		_application.setFeatureFlagEnabled(false);
+		PropsUtil.set("feature.flag.LPD-99955", "false");
+		PropsUtil.set("feature.flag.LPS-178052", "false");
 
 		Response response = _application.updateFragmentEntryLink(_httpServletRequest, 100L, "{\"k\":\"v\"}");
 
@@ -88,7 +115,7 @@ public class FragmentOverrideApplicationTest {
 
 	@Test
 	public void testUpdateUnauthenticatedReturnsUnauthorized() throws Exception {
-		_application.setFeatureFlagEnabled(true);
+		PropsUtil.set("feature.flag.LPD-99955", "true");
 		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(null);
 
 		Response response = _application.updateFragmentEntryLink(_httpServletRequest, 100L, "{\"k\":\"v\"}");
@@ -99,7 +126,7 @@ public class FragmentOverrideApplicationTest {
 
 	@Test
 	public void testUpdateInvalidParametersReturnsBadRequest() throws Exception {
-		_application.setFeatureFlagEnabled(true);
+		PropsUtil.set("feature.flag.LPD-99955", "true");
 		User user = Mockito.mock(User.class);
 		Mockito.when(user.isDefaultUser()).thenReturn(false);
 		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(user);
@@ -113,7 +140,7 @@ public class FragmentOverrideApplicationTest {
 
 	@Test
 	public void testUpdateEntityNotFoundReturnsNotFound() throws Exception {
-		_application.setFeatureFlagEnabled(true);
+		PropsUtil.set("feature.flag.LPD-99955", "true");
 		User user = Mockito.mock(User.class);
 		Mockito.when(user.isDefaultUser()).thenReturn(false);
 		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(user);
@@ -126,8 +153,8 @@ public class FragmentOverrideApplicationTest {
 	}
 
 	@Test
-	public void testUpdateWithoutPermissionReturnsForbidden() throws Exception {
-		_application.setFeatureFlagEnabled(true);
+	public void testUpdateWithoutPermissionLayoutNotFoundReturnsForbidden() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
 		User user = Mockito.mock(User.class);
 		Mockito.when(user.isDefaultUser()).thenReturn(false);
 		Mockito.when(user.getCompanyId()).thenReturn(2001L);
@@ -153,8 +180,38 @@ public class FragmentOverrideApplicationTest {
 	}
 
 	@Test
+	public void testUpdateWithoutPermissionLayoutPermissionDeniedReturnsForbidden() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User user = Mockito.mock(User.class);
+		Mockito.when(user.isDefaultUser()).thenReturn(false);
+		Mockito.when(user.getCompanyId()).thenReturn(2001L);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(user);
+
+		FragmentEntryLink link = Mockito.mock(FragmentEntryLink.class);
+		Mockito.when(link.getGroupId()).thenReturn(3001L);
+		Mockito.when(link.getPlid()).thenReturn(4001L);
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(101L)).thenReturn(link);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(false);
+		Mockito.when(permissionChecker.isCompanyAdmin(2001L)).thenReturn(false);
+		Mockito.when(permissionChecker.isGroupAdmin(3001L)).thenReturn(false);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Layout layout = Mockito.mock(Layout.class);
+		Mockito.when(_layoutLocalService.fetchLayout(4001L)).thenReturn(layout);
+		Mockito.when(_layoutPermission.contains(permissionChecker, layout, ActionKeys.UPDATE)).thenReturn(false);
+
+		Response response = _application.updateFragmentEntryLink(_httpServletRequest, 101L, "{\"k\":\"v\"}");
+
+		Assert.assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
+		Assert.assertTrue(response.getEntity().toString().contains("Forbidden"));
+		Mockito.verify(_layoutPermission).contains(permissionChecker, layout, ActionKeys.UPDATE);
+	}
+
+	@Test
 	public void testUpdateSuccessAttributedToCaller() throws Exception {
-		_application.setFeatureFlagEnabled(true);
+		PropsUtil.set("feature.flag.LPD-99955", "true");
 		User caller = Mockito.mock(User.class);
 		Mockito.when(caller.isDefaultUser()).thenReturn(false);
 		Mockito.when(caller.getUserId()).thenReturn(55555L);
@@ -242,19 +299,6 @@ public class FragmentOverrideApplicationTest {
 
 		field.setAccessible(true);
 		field.set(target, value);
-	}
-
-	private static class TestFragmentOverrideApplication extends FragmentOverrideApplication {
-		private boolean _featureFlagEnabled = false;
-
-		public void setFeatureFlagEnabled(boolean enabled) {
-			_featureFlagEnabled = enabled;
-		}
-
-		@Override
-		protected boolean isFeatureFlagEnabled() {
-			return _featureFlagEnabled;
-		}
 	}
 
 	private static class DummyResponseBuilder extends Response.ResponseBuilder {
@@ -382,10 +426,11 @@ public class FragmentOverrideApplicationTest {
 		public Response.ResponseBuilder link(String uri, String rel) { return this; }
 	}
 
-	private TestFragmentOverrideApplication _application;
+	private FragmentOverrideApplication _application;
 	private FragmentEntryLinkLocalService _fragmentEntryLinkLocalService;
 	private HttpServletRequest _httpServletRequest;
 	private LayoutLocalService _layoutLocalService;
+	private LayoutPermission _layoutPermission;
 	private Portal _portal;
 
 }
