@@ -33,6 +33,7 @@ what — add yourself there when you consume or contribute one.
 |---|---|---|
 | [`fragment-override`](#fragment-override) | **in development** | Headless API rejects specification updates on published site initializer pages |
 | [`search-reindex`](#search-reindex) | **available** | Triggers asynchronous search reindexing for arbitrary entity classes without a published Headless or GraphQL mutation |
+| [`commerce-site-type`](#commerce-site-type) | **available** | Exposes a commerce channel's B2B/B2C/B2X site type and allowed account types |
 
 ### fragment-override
 
@@ -97,14 +98,104 @@ The endpoint is strictly gated:
 - Unauthenticated / guest requests return HTTP 401 `Unauthorized`.
 - Non-omniadmin callers return HTTP 403 `Forbidden`.
 
+### commerce-site-type
+
+Exposes a commerce channel's **site type** (`B2C` / `B2B` / `B2X`) and allowed
+account types.
+
+No headless Liferay API (`/o/headless-commerce-admin-channel/v1.0/channels`) exposes
+a channel's site type. Inside Liferay, this setting is stored in group-scoped OSGi
+configuration (`com.liferay.commerce.account`) on the channel's own `Group`
+(`classNameId = CommerceChannel`, `classPK = channelId`).
+
+#### Endpoint
+
+```
+GET /o/commerce-site-type/channels/{channelId}/site-type
+```
+
+Returns:
+```json
+{
+  "channelId": 34562,
+  "siteType": 1,
+  "siteTypeLabel": "B2B",
+  "siteTypeStatus": "CONFIGURED",
+  "configuredScope": "GROUP",
+  "allowedAccountTypes": ["business", "supplier"],
+  "configured": true
+}
+```
+
+#### Status & Configuration Lifecycle
+
+The response cleanly separates interpretation (`siteTypeStatus`) from provenance (`configuredScope`):
+
+##### `siteTypeStatus`
+
+- **`CONFIGURED`**: Explicitly set in admin to a recognized type (`B2B`, `B2C`, `B2X`). `allowedAccountTypes` contains the allowed types. Consumers validate strictly.
+- **`NOT_CONFIGURED`**: Not explicitly configured at any scope. Liferay defaults `commerceSiteType` to `0` (B2C) while account configuration defaults to B2X. When `NOT_CONFIGURED`, `allowedAccountTypes` is empty `[]` and `configured` is `false`. Consumers should warn and fail open. Remedy: operator sets site type in Commerce → Channels.
+- **`UNRECOGNISED`**: Channel is configured to a site type value not recognized by this bundle version (e.g. `3`). Returns raw integer `siteType`, `siteTypeLabel: "UNKNOWN"`, `allowedAccountTypes: []`, and `configured: true`. Consumers should warn and fail open. Remedy: tooling update.
+
+##### `configuredScope`
+
+- **`GROUP`**: Explicitly configured on the channel's own group.
+- **`COMPANY`**: Inherited from the company (virtual instance) level.
+- **`SYSTEM`**: Inherited from system configuration.
+- **`NONE`**: Not explicitly configured at any scope (`configured: false`).
+
+Site types supported:
+- `0`: `B2C` (allowed account types: `["person"]`)
+- `1`: `B2B` (allowed account types: `["business", "supplier"]`)
+- `2`: `B2X` (allowed account types: `["business", "person", "supplier"]`)
+
+#### Status Healthcheck
+```
+GET /o/commerce-site-type/status
+```
+
+The `/status` healthcheck is intentionally unauthenticated as a lightweight
+deployment readiness probe to verify that the module is installed and responding.
+
+#### Security & Permissions
+
+- **Authentication**: Unauthenticated / guest requests return HTTP 401 `Unauthorized`.
+- **Authorization**: Callers require omniadmin, company admin, or `VIEW` permission on the
+  channel or its group (`com.liferay.commerce.product.model.CommerceChannel`). Unauthorized
+  callers return HTTP 403 `Forbidden`.
+
+#### Liferay versions
+
+Compiled against `dxp-2026.q1.12-lts`, the workspace pin.
+
+The `Import-Package` ranges in `bnd.bnd` are bounded to the current major of each
+package and are **kernel-only** — `com.liferay.portal.kernel.{exception, json, log,
+model, security.permission, service, settings, util}`. Nothing from a commerce
+bundle is imported: the channel is reached through `GroupLocalServiceUtil` and
+referred to by class-name string, and the site type is read through
+`GroupServiceSettingsLocator` and its company and system counterparts.
+
+**Runtime verification is outstanding.** The 13 unit tests exercise the resolution
+logic with mocks; they do not exercise OSGi wiring, so the ranges above are not yet
+confirmed at either end of any line span. Deploying to a `2026.q1.12-lts` instance
+and to one other line, and confirming the bundle resolves and
+`/o/commerce-site-type/status` answers, is what would settle it.
+
+Until then this module claims only the line it was compiled against. Kernel packages
+change major less often than application packages, so a single artifact spanning
+several lines is plausible — but that is a hypothesis about this import set, not a
+tested claim, and per the resolution above it is a property of the imports rather
+than of the repository.
+
 ## Building
 
 ```bash
 ./gradlew :modules:fragment-override:build
 ./gradlew :modules:search-reindex:build
+./gradlew :modules:commerce-site-type:build
 ```
 
-The JAR lands in `modules/fragment-override/build/libs/`.
+The JAR lands in `modules/<module-name>/build/libs/`.
 
 ## Consuming a module
 
@@ -162,7 +253,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly group: "com.liferay.custom.osgi", name: "fragment-override", version: "1.0.0"
+    compileOnly group: "com.liferay.custom.osgi", name: "commerce-site-type", version: "1.0.0"
 }
 ```
 
