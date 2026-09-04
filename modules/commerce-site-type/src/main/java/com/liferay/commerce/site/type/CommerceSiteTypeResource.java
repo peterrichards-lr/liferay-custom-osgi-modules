@@ -13,10 +13,13 @@ import com.liferay.portal.kernel.security.permission.PermissionChecker;
 import com.liferay.portal.kernel.security.permission.PermissionThreadLocal;
 import com.liferay.portal.kernel.service.ClassNameLocalServiceUtil;
 import com.liferay.portal.kernel.service.GroupLocalServiceUtil;
+import com.liferay.portal.kernel.settings.CompanyServiceSettingsLocator;
 import com.liferay.portal.kernel.settings.FallbackKeysSettingsUtil;
 import com.liferay.portal.kernel.settings.GroupServiceSettingsLocator;
 import com.liferay.portal.kernel.settings.ModifiableSettings;
 import com.liferay.portal.kernel.settings.Settings;
+import com.liferay.portal.kernel.settings.SettingsLocator;
+import com.liferay.portal.kernel.settings.SystemSettingsLocator;
 import com.liferay.portal.kernel.util.GetterUtil;
 import com.liferay.portal.kernel.util.PortalUtil;
 
@@ -85,6 +88,20 @@ public class CommerceSiteTypeResource {
 				return permissionResponse;
 			}
 
+			String configuredScope = "NONE";
+
+			if (_isModifiedAt(new GroupServiceSettingsLocator(group.getGroupId(), "com.liferay.commerce.account"), "commerceSiteType")) {
+				configuredScope = "GROUP";
+			}
+			else if (_isModifiedAt(new CompanyServiceSettingsLocator(companyId, "com.liferay.commerce.account"), "commerceSiteType")) {
+				configuredScope = "COMPANY";
+			}
+			else if (_isModifiedAt(new SystemSettingsLocator("com.liferay.commerce.configuration.CommerceAccountGroupServiceConfiguration"), "commerceSiteType")) {
+				configuredScope = "SYSTEM";
+			}
+
+			boolean configured = !configuredScope.equals("NONE");
+
 			GroupServiceSettingsLocator locator = new GroupServiceSettingsLocator(
 				group.getGroupId(), "com.liferay.commerce.account");
 
@@ -98,13 +115,6 @@ public class CommerceSiteTypeResource {
 					_log.debug("FallbackKeysSettingsUtil failed; falling back to locator.getSettings()", exception);
 				}
 				settings = locator.getSettings();
-			}
-
-			ModifiableSettings modifiableSettings = settings.getModifiableSettings();
-			boolean configured = false;
-
-			if (modifiableSettings != null && modifiableSettings.getModifiedKeys() != null) {
-				configured = modifiableSettings.getModifiedKeys().contains("commerceSiteType");
 			}
 
 			int siteType = GetterUtil.getInteger(settings.getValue("commerceSiteType", "0"), 0);
@@ -145,6 +155,7 @@ public class CommerceSiteTypeResource {
 			responseJSON.put("siteType", siteType);
 			responseJSON.put("siteTypeLabel", siteTypeLabel);
 			responseJSON.put("siteTypeStatus", siteTypeStatus);
+			responseJSON.put("configuredScope", configuredScope);
 
 			JSONArray allowedAccountTypesJSONArray = JSONFactoryUtil.createJSONArray();
 			for (String allowedAccountType : allowedAccountTypes) {
@@ -203,6 +214,34 @@ public class CommerceSiteTypeResource {
 		jsonObject.put("message", message);
 
 		return Response.status(status).entity(jsonObject.toString()).type(MediaType.APPLICATION_JSON).build();
+	}
+
+	private boolean _isModifiedAt(SettingsLocator locator, String key) {
+		try {
+			Settings settings;
+
+			try {
+				settings = FallbackKeysSettingsUtil.getSettings(locator);
+			}
+			catch (Exception | LinkageError exception) {
+				settings = locator.getSettings();
+			}
+
+			if (settings != null) {
+				ModifiableSettings modifiableSettings = settings.getModifiableSettings();
+
+				if (modifiableSettings != null && modifiableSettings.getModifiedKeys() != null) {
+					return modifiableSettings.getModifiedKeys().contains(key);
+				}
+			}
+		}
+		catch (Exception exception) {
+			if (_log.isDebugEnabled()) {
+				_log.debug("Failed to check modified keys for locator " + locator.getSettingsId(), exception);
+			}
+		}
+
+		return false;
 	}
 
 	private static final Log _log = LogFactoryUtil.getLog(CommerceSiteTypeResource.class);

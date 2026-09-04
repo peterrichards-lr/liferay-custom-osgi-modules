@@ -188,6 +188,7 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"siteType\":0"));
 		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2C\""));
 		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"CONFIGURED\""));
+		Assert.assertTrue(json.contains("\"configuredScope\":\"GROUP\""));
 		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[\"person\"]"));
 		Assert.assertTrue(json.contains("\"configured\":true"));
 	}
@@ -205,6 +206,7 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"siteType\":1"));
 		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2B\""));
 		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"CONFIGURED\""));
+		Assert.assertTrue(json.contains("\"configuredScope\":\"GROUP\""));
 		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[\"business\",\"supplier\"]"));
 		Assert.assertTrue(json.contains("\"configured\":true"));
 	}
@@ -222,6 +224,7 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"siteType\":2"));
 		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2X\""));
 		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"CONFIGURED\""));
+		Assert.assertTrue(json.contains("\"configuredScope\":\"GROUP\""));
 		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[\"business\",\"person\",\"supplier\"]"));
 		Assert.assertTrue(json.contains("\"configured\":true"));
 	}
@@ -239,6 +242,7 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"siteType\":0"));
 		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2C\""));
 		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"NOT_CONFIGURED\""));
+		Assert.assertTrue(json.contains("\"configuredScope\":\"NONE\""));
 		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[]"));
 		Assert.assertTrue(json.contains("\"configured\":false"));
 	}
@@ -256,7 +260,26 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"siteType\":99"));
 		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"UNKNOWN\""));
 		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"UNRECOGNISED\""));
+		Assert.assertTrue(json.contains("\"configuredScope\":\"GROUP\""));
 		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[]"));
+		Assert.assertTrue(json.contains("\"configured\":true"));
+	}
+
+	@Test
+	public void testGetSiteType_InheritedFromCompanyScope_ReportsCompanyScopeAndConfigured() throws Exception {
+		_setupOmniadmin();
+		_setupCompanyScopeSettings("1");
+
+		Response response = _resource.getSiteType(_httpServletRequest, 34562L);
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		String json = response.getEntity().toString();
+		Assert.assertTrue(json.contains("\"channelId\":34562"));
+		Assert.assertTrue(json.contains("\"siteType\":1"));
+		Assert.assertTrue(json.contains("\"siteTypeLabel\":\"B2B\""));
+		Assert.assertTrue(json.contains("\"siteTypeStatus\":\"CONFIGURED\""));
+		Assert.assertTrue(json.contains("\"configuredScope\":\"COMPANY\""));
+		Assert.assertTrue(json.contains("\"allowedAccountTypes\":[\"business\",\"supplier\"]"));
 		Assert.assertTrue(json.contains("\"configured\":true"));
 	}
 
@@ -294,6 +317,31 @@ public class CommerceSiteTypeResourceTest {
 		Mockito.when(_settingsLocatorHelper.getGroupPortletPreferencesSettings(
 			Mockito.eq(groupId), Mockito.eq("com.liferay.commerce.account"), Mockito.any()))
 			.thenReturn(mockSettings);
+	}
+
+	private void _setupCompanyScopeSettings(String siteTypeValue) throws Exception {
+		long channelId = 34562L;
+		long groupId = 34563L;
+
+		Group group = Mockito.mock(Group.class);
+		Mockito.when(group.getGroupId()).thenReturn(groupId);
+		Mockito.when(group.getCompanyId()).thenReturn(1001L);
+
+		Mockito.when(_groupLocalService.fetchGroup(1001L, 12345L, channelId)).thenReturn(group);
+		Mockito.when(_groupLocalService.getGroup(groupId)).thenReturn(group);
+
+		TestModifiableSettings groupSettings = new TestModifiableSettings();
+		groupSettings.setValue("commerceSiteType", siteTypeValue);
+		Mockito.when(_settingsLocatorHelper.getGroupPortletPreferencesSettings(
+			Mockito.eq(groupId), Mockito.eq("com.liferay.commerce.account"), Mockito.any()))
+			.thenReturn(groupSettings);
+
+		TestModifiableSettings companySettings = new TestModifiableSettings();
+		companySettings.setValue("commerceSiteType", siteTypeValue);
+		companySettings.addModifiedKey("commerceSiteType");
+		Mockito.when(_settingsLocatorHelper.getCompanyPortletPreferencesSettings(
+			Mockito.eq(1001L), Mockito.eq("com.liferay.commerce.account"), Mockito.any()))
+			.thenReturn(companySettings);
 	}
 
 	private void _setSettingsLocatorHelperSupplier(Supplier<SettingsLocatorHelper> supplier) throws Exception {

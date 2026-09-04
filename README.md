@@ -121,6 +121,7 @@ Returns:
   "siteType": 1,
   "siteTypeLabel": "B2B",
   "siteTypeStatus": "CONFIGURED",
+  "configuredScope": "GROUP",
   "allowedAccountTypes": ["business", "supplier"],
   "configured": true
 }
@@ -128,11 +129,20 @@ Returns:
 
 #### Status & Configuration Lifecycle
 
-Consumers branch on `siteTypeStatus`:
+The response cleanly separates interpretation (`siteTypeStatus`) from provenance (`configuredScope`):
+
+##### `siteTypeStatus`
 
 - **`CONFIGURED`**: Explicitly set in admin to a recognized type (`B2B`, `B2C`, `B2X`). `allowedAccountTypes` contains the allowed types. Consumers validate strictly.
-- **`NOT_CONFIGURED`**: Headless channel creation does not persist a site type until saved in admin; Liferay defaults `commerceSiteType` to `0` (B2C) while account configuration defaults to B2X. When `NOT_CONFIGURED`, `allowedAccountTypes` is empty `[]` and `configured` is `false`. Consumers should warn and fail open. Remedy: operator sets site type in Commerce → Channels.
+- **`NOT_CONFIGURED`**: Not explicitly configured at any scope. Liferay defaults `commerceSiteType` to `0` (B2C) while account configuration defaults to B2X. When `NOT_CONFIGURED`, `allowedAccountTypes` is empty `[]` and `configured` is `false`. Consumers should warn and fail open. Remedy: operator sets site type in Commerce → Channels.
 - **`UNRECOGNISED`**: Channel is configured to a site type value not recognized by this bundle version (e.g. `3`). Returns raw integer `siteType`, `siteTypeLabel: "UNKNOWN"`, `allowedAccountTypes: []`, and `configured: true`. Consumers should warn and fail open. Remedy: tooling update.
+
+##### `configuredScope`
+
+- **`GROUP`**: Explicitly configured on the channel's own group.
+- **`COMPANY`**: Inherited from the company (virtual instance) level.
+- **`SYSTEM`**: Inherited from system configuration.
+- **`NONE`**: Not explicitly configured at any scope (`configured: false`).
 
 Site types supported:
 - `0`: `B2C` (allowed account types: `["person"]`)
