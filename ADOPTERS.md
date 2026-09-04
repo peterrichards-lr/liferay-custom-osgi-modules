@@ -14,7 +14,7 @@ consuming a module in a way its author would not expect, say so in the notes
 
 | Project | Module | Since | Notes |
 |---|---|---|---|
-| [liferay-docker-manager](https://github.com/peterrichards-lr/liferay-docker-manager) | `fragment-override` | *pending* | Drove the module. Currently still on its direct-SQL workaround; will switch once the module is implemented and the two configuration routes in the README are ruled out. See [#1601](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1601). |
+| [liferay-docker-manager](https://github.com/peterrichards-lr/liferay-docker-manager) | `fragment-override` | *pending* | Drove the module. Configuration routes ruled out (LPS-178052 is POST-only, LPS-165482 is sync-only; tracked in LPD-99955). Will switch once the module is implemented behind `feature.flag.LPD-99955=true`. See [#1601](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1601). |
 | [liferay-ai-commerce-accelerator](https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator) | `search-reindex` | *pending* | Adopted from `aica-reindex-endpoint`. Triggers asynchronous search reindexing for arbitrary entity classes where no Headless REST or GraphQL mutation exists. Answers on `/search-reindex` and backward-compatible alias `/aica-reindex`. See [#4](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/4). |
 
 ## Contributors of modules

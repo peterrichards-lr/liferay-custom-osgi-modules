@@ -1,4 +1,21 @@
 dependencies {
 	compileOnly group: "com.liferay.portal", name: "release.dxp.api"
 	compileOnly group: "com.liferay", name: "org.osgi.service.jaxrs", version: "1.0.0.JAKARTA-LIFERAY-PATCHED-1"
+
+	testImplementation group: "com.liferay.portal", name: "release.dxp.api"
+	testImplementation group: "com.liferay", name: "org.osgi.service.jaxrs", version: "1.0.0.JAKARTA-LIFERAY-PATCHED-1"
+
+	testImplementation group: "junit", name: "junit", version: "4.13.2"
+	testImplementation group: "org.mockito", name: "mockito-core", version: "5.11.0"
+	testImplementation group: "org.apache.logging.log4j", name: "log4j-core", version: "2.21.1"
+	testImplementation group: "commons-configuration", name: "commons-configuration", version: "1.10"
+}
+
+test {
+	jvmArgs(
+		"--add-opens=java.base/java.lang=ALL-UNNAMED",
+		"--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+		"--add-opens=java.base/java.util=ALL-UNNAMED"
+	)
+	systemProperty "liferay.home", "${project.layout.buildDirectory.get().asFile}/liferay-home"
 }

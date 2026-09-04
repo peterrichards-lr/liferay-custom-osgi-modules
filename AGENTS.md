@@ -23,9 +23,10 @@ them as meaningful.
 
 ## Rules
 
-- **Do not implement `fragment-override` yet.** Two configuration routes must
-  be ruled out first — see the README. Writing it before that risks
-  maintaining Java that a portal property makes redundant.
+- **`fragment-override` configuration routes have been ruled out.** Investigation
+  confirmed that `LPS-178052` is POST-only and `LPS-165482` does not expose runtime
+  fragment overrides; upstream issue is tracked under LPD-99955. The module is
+  gated behind `feature.flag.LPD-99955=true` in `portal-ext.properties`.
 - **Rule out configuration before writing any module.** Feature flags and
   undocumented supported paths are common; a property is cheaper than a bundle
   for everyone, permanently. Record what was ruled out and how.
@@ -50,5 +51,6 @@ them as meaningful.
 - **Project-specific modules do not belong here.** They stay with their
   project; reuse happens through published artifacts.
 
+<!-- markdownlint-disable MD049 -->
 ---
 *Last Updated: 2026-09-04* | *Last Reviewed: 2026-09-04*
