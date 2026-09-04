@@ -144,6 +144,57 @@ jobs:
             exit 1
           fi
 
+          # Emit machine-readable release manifest
+          entries=()
+          for bnd in modules/*/bnd.bnd; do
+            [ -e "$bnd" ] || continue
+            module=$(basename "$(dirname "$bnd")")
+            bsn=$(sed -n 's/^Bundle-SymbolicName:[[:space:]]*//p' "$bnd" | tr -d '\r')
+            target_jar=$(ls "dist/${bsn}-"*.jar 2>/dev/null | head -n 1)
+            target_file=$(basename "$target_jar")
+            bundle_ver=$(unzip -p "$target_jar" META-INF/MANIFEST.MF | sed -n 's/^Bundle-Version:[[:space:]]*//p' | tr -d '\r')
+            sha=$(cut -d ' ' -f 1 "dist/${target_file}.sha256")
+            entries+=("{\"module\":\"${module}\",\"bsn\":\"${bsn}\",\"version\":\"${bundle_ver}\",\"asset\":\"${target_file}\",\"sha256\":\"${sha}\"}")
+          done
+
+          joined=$(IFS=,; echo "${entries[*]}")
+          tag="${{ github.event.release.tag_name }}"
+          [ -n "$tag" ] || tag="v${{ steps.ver.outputs.version }}"
+
+          cat << EOF > dist/manifest.json
+{
+  "release": "${tag}",
+  "dxpLine": "${{ steps.ver.outputs.dxp }}",
+  "bundles": [
+    ${joined}
+  ]
+}
+EOF
+          jq . dist/manifest.json > dist/manifest.json.tmp && mv dist/manifest.json.tmp dist/manifest.json
+          (cd dist && sha256sum manifest.json > manifest.json.sha256)
+
+          # Verify the manifest strictly matches the staged set
+          manifest_count=$(jq '.bundles | length' dist/manifest.json)
+          if [ "$manifest_count" -ne "$modules" ]; then
+            echo "::error::manifest describes $manifest_count bundles, expected $modules"
+            exit 1
+          fi
+
+          for row in $(jq -r '.bundles[] | @base64' dist/manifest.json); do
+            _jq() { echo "$row" | base64 --decode | jq -r "$1"; }
+            asset=$(_jq '.asset')
+            sha=$(_jq '.sha256')
+            if [ ! -f "dist/${asset}" ]; then
+              echo "::error::manifest references missing asset dist/${asset}"
+              exit 1
+            fi
+            actual_sha=$(sha256sum "dist/${asset}" | cut -d ' ' -f 1)
+            if [ "$actual_sha" != "$sha" ]; then
+              echo "::error::manifest sha256 mismatch for ${asset}"
+              exit 1
+            fi
+          done
+
       - name: Attach assets to the release
         # GitHub Packages' Maven registry requires authentication even for
         # public packages, so a release asset is the only anonymous way to get
