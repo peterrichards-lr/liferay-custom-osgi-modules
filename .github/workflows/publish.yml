@@ -112,19 +112,24 @@ jobs:
           ls -l dist
 
           staged=$(ls dist/*.jar 2>/dev/null | wc -l | tr -d ' ')
-          modules=$(ls -d modules/*/bnd.bnd 2>/dev/null | wc -l | tr -d ' ')
 
           if [ "$staged" -eq 0 ]; then
             echo "::error::no jars were staged"
             exit 1
           fi
 
-          if [ "$staged" -ne "$modules" ]; then
-            echo "::error::staged $staged jars for $modules bundle modules (modules/*/bnd.bnd)"
-            echo "::error::Every OSGi bundle module under modules/ is expected to produce exactly one release asset in dist/."
-            ls -l dist
-            exit 1
-          fi
+          status=0
+          for bnd in modules/*/bnd.bnd; do
+            [ -e "$bnd" ] || continue
+            module=$(basename "$(dirname "$bnd")")
+            bsn=$(sed -n 's/^Bundle-SymbolicName:[[:space:]]*//p' "$bnd" | tr -d '\r')
+            n=$(ls "dist/${bsn}-"*.jar 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$n" -ne 1 ]; then
+              echo "::error::${module} (${bsn}) staged ${n} assets in dist/, expected exactly 1"
+              status=1
+            fi
+          done
+          [ "$status" -eq 0 ] || { ls -l dist; exit 1; }
 
           if ls dist/ | grep -qi snapshot; then
             echo "::error::a SNAPSHOT artefact reached the release staging area"
