@@ -228,11 +228,11 @@ gh release download v1.1.0 \
 
 shasum -a 256 -c *.sha256
 
-ldm deploy <project> com.liferay.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar
+ldm deploy <project> com.liferay.custom.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar
 ```
 
 **The DXP line is in the filename, not only the metadata**, e.g.
-`com.liferay.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar`. A mismatch
+`com.liferay.custom.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar`. A mismatch
 between the bundle and the portal you are deploying into is then visible when
 you download it, rather than surfacing later as a resolution failure inside a
 running instance.
@@ -313,7 +313,7 @@ only packages that are stable across your target lines can ship as a single
 artifact spanning releases.
 
 The `-dxp-<tag>.jar` suffix in release asset filenames (e.g.
-`com.liferay.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar`) remains standard
+`com.liferay.custom.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar`) remains standard
 either way: it is correct for per-line bundles and harmless for a bundle that
 spans lines.
 
