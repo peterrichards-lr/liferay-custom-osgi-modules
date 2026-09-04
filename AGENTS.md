@@ -33,11 +33,11 @@ them as meaningful.
 - **`Import-Package` ranges are the real risk.** Consumers run a wide span of
   Liferay versions and a bundle compiled against one `com.liferay.*` API
   version may not resolve against another. Never ship whatever bnd infers.
-- **One artifact vs one per Liferay line is UNDECIDED** — see README. Do not
-  build per-tag pipelines pre-emptively; the question is empirical (do the
-  exported package versions actually change across the supported span?) and no
-  module imports `com.liferay.*` yet, so there is no evidence either way.
-  Settle it with a resolution matrix, not by assumption.
+- **Per-DXP-line is a property of a module's imports, not the repository.** A
+  bundle is a per-line artifact whenever its imported package versions change
+  across targeted lines (e.g. `fragment-override` importing
+  `com.liferay.fragment.service`). Modules importing only stable packages may
+  span releases with a single artifact.
 - **Name modules for the capability, not the consumer.** The next project to
   need one should not have to read another project's name to understand it.
 - **Publishing is release-triggered, never merge-triggered.** A registry

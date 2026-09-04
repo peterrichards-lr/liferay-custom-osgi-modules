@@ -253,12 +253,35 @@ at its default.
 
 That pin is a **compile target, not a support range.**
 
-### Open decision: one artifact, or one per Liferay line?
+### Resolution: per-DXP-line is a property of a module's imports
 
-Settled: **one artifact per DXP line**. The resolution matrix proved that exported
-package versions differ across DXP quarterly lines, so a single bundle cannot resolve
-across all supported versions. Release assets are named
-`<module>-<version>-dxp-<line>.jar` to make the target line explicit at download time.
+The question of whether to publish a single generic artifact or one artifact per
+Liferay DXP line has been settled with empirical evidence:
+
+1. **Breaking Package Export Increments**: Inspection of target platform baselines
+   revealed that Liferay bumps major package versions across DXP quarterly lines.
+   For example, `com.liferay.fragment.service` bumped from `15.0.0` in DXP 2025.Q4
+   to `16.0.0` in DXP 2026.Q1, and `com.liferay.portal.kernel.util` sits at `96.6.0`.
+2. **Bounded OSGi Consumer Ranges**: Under OSGi semantic versioning, consumer
+   import ranges for services and models must be bounded to the current major version
+   (`[16.0, 17.0)` for `com.liferay.fragment.service`, `[5.0, 6.0)` for
+   `com.liferay.fragment.model`). A bundle compiled against 2026.Q1 cannot satisfy its
+   wiring requirements on 2025.Q4 runtimes.
+
+A bundle is a per-DXP-line artifact whenever it imports packages whose major
+versions differ across the lines it targets. `fragment-override` is one:
+`com.liferay.fragment.service` is `15.x` on 2025.Q4 and `16.x` on 2026.Q1, so
+no single bounded range spans both.
+
+This is a consequence of a module's imports, not a blanket rule of this repository.
+Check your own import set before assuming it applies — a module importing
+only packages that are stable across your target lines can ship as a single
+artifact spanning releases.
+
+The `-dxp-<tag>.jar` suffix in release asset filenames (e.g.
+`com.liferay.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar`) remains standard
+either way: it is correct for per-line bundles and harmless for a bundle that
+spans lines.
 
 <!-- markdownlint-disable MD049 -->
 ---
