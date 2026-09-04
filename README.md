@@ -94,15 +94,29 @@ build-time dependency or just the bundle.
 The usual case. An OSGi bundle is consumed by being dropped into a running
 instance's `osgi/modules`, not by being compiled against.
 
-Every release attaches its JARs as release assets, which are downloadable
-anonymously:
+Every release attaches its JARs as release assets, downloadable anonymously,
+each with a `.sha256` beside it:
 
 ```bash
-gh release download --repo peterrichards-lr/liferay-custom-osgi-modules \
-  --pattern '*.jar'
+gh release download v1.1.0 \
+  --repo peterrichards-lr/liferay-custom-osgi-modules \
+  --pattern '*.jar' --pattern '*.sha256'
 
-ldm deploy <project> com.liferay.fragment.override-1.0.0.jar
+shasum -a 256 -c *.sha256
+
+ldm deploy <project> com.liferay.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar
 ```
+
+**The DXP line is in the filename, not only the metadata**, e.g.
+`com.liferay.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar`. A mismatch
+between the bundle and the portal you are deploying into is then visible when
+you download it, rather than surfacing later as a resolution failure inside a
+running instance.
+
+`Bundle-Version` comes from the release tag, so two builds are always
+distinguishable and a `.ldmp` package can record exactly which bundle it
+contains. A locally built jar is versioned `1.0.0-SNAPSHOT` and can never be
+mistaken for a released one.
 
 ### As a Maven/Gradle dependency (authentication required)
 

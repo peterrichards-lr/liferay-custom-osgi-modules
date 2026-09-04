@@ -20,6 +20,20 @@ subprojects {
 
 		project.group = "com.liferay.custom.osgi"
 
+		// Bundle-Version comes from here, not from bnd.bnd. A hardcoded
+		// `Bundle-Version: 1.0.0` in bnd.bnd wins over every Gradle mechanism
+		// (verified: -Pversion and the jar `bnd` extension are both ignored
+		// while it is present), which meant every build of every release
+		// produced an identically-versioned bundle. A consumer could not tell
+		// two builds apart, and an .ldmp package could not record which one it
+		// contained.
+		//
+		// Release builds pass -Pversion=<tag>. Local builds get a SNAPSHOT, so
+		// an unreleased jar is never mistaken for a released one.
+		if (project.version == "unspecified") {
+			project.version = "1.0.0-SNAPSHOT"
+		}
+
 		project.publishing {
 			publications {
 				bundle(MavenPublication) {

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build against the pinned DXP version
+        run: ./gradlew build --no-daemon
+
+      - name: Report what each bundle imports
+        # Not a gate yet -- it prints the manifest so the Import-Package
+        # question stays visible in every run rather than living only in the
+        # README. It becomes a gate once a module imports com.liferay.*; see
+        # the "one artifact, or one per Liferay line?" section of the README.
+        run: |
+          for jar in modules/*/build/libs/*.jar; do
+            [ -e "$jar" ] || continue
+            echo "--- $(basename "$jar") ---"
+            unzip -p "$jar" META-INF/MANIFEST.MF | tr -d '\r' \
+              | grep -E "Bundle-SymbolicName|Bundle-Version|Import-Package" || true
+          done

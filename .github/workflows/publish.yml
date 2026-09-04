@@ -30,8 +30,27 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Derive the release version
+        # The tag drives Bundle-Version, so two builds are distinguishable and
+        # an .ldmp package can record exactly which bundle it contains.
+        id: ver
+        run: |
+          version="${{ github.event.release.tag_name }}"
+          version="${version#v}"
+          [ -n "$version" ] || version="0.0.0-manual"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          dxp=$(sed -n 's/^liferay\.workspace\.product=//p' gradle.properties | tr -d '[:space:]')
+          [ -n "$dxp" ] || { echo "::error::liferay.workspace.product missing"; exit 1; }
+          echo "dxp=$dxp" >> "$GITHUB_OUTPUT"
+          echo "Building $version against $dxp"
+
       - name: Build
-        run: ./gradlew build --no-daemon
+        # `clean` matters: build/libs is not emptied between builds, so a stale
+        # jar from a previous version would be picked up by the globbing below
+        # and uploaded alongside the real one. Observed while rehearsing the
+        # asset step locally.
+        run: ./gradlew clean build --no-daemon -Pversion="${{ steps.ver.outputs.version }}"
 
       - name: Verify every bundle declares Import-Package versions
         # The risk this repo keeps warning about: bnd infers unversioned
@@ -66,12 +85,29 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Attach JARs to the release
+      - name: Stage release assets, named for the DXP line they were built against
+        # The DXP version goes in the FILENAME, not just the metadata, so a
+        # mismatch is visible at the point of download rather than surfacing
+        # later as a resolution failure inside a portal. A checksum accompanies
+        # each, matching how LDM verifies its own snapshot payloads.
+        if: github.event_name == 'release'
+        run: |
+          mkdir -p dist
+          for jar in modules/*/build/libs/*.jar; do
+            [ -e "$jar" ] || continue
+            base=$(basename "$jar" .jar)
+            target="dist/${base}-${{ steps.ver.outputs.dxp }}.jar"
+            cp "$jar" "$target"
+            (cd dist && sha256sum "$(basename "$target")" > "$(basename "$target").sha256")
+          done
+          ls -l dist
+
+      - name: Attach assets to the release
         # GitHub Packages' Maven registry requires authentication even for
         # public packages, so a release asset is the only anonymous way to get
         # a bundle. That matters here: the primary consumption path is a file
         # dropped into osgi/modules, not a Maven coordinate.
         if: github.event_name == 'release'
-        run: gh release upload "${{ github.event.release.tag_name }}" modules/*/build/libs/*.jar --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/* --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
