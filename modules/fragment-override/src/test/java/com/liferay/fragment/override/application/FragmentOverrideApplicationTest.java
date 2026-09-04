@@ -2,6 +2,7 @@ package com.liferay.fragment.override.application;
 
 import com.liferay.fragment.model.FragmentEntryLink;
 import com.liferay.fragment.service.FragmentEntryLinkLocalService;
+import com.liferay.portal.kernel.json.JSONException;
 import com.liferay.portal.kernel.json.JSONFactory;
 import com.liferay.portal.kernel.json.JSONFactoryUtil;
 import com.liferay.portal.kernel.json.JSONObject;
@@ -18,7 +19,10 @@ import com.liferay.portal.kernel.util.PortalUtil;
 import com.liferay.portal.kernel.util.PropsUtil;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -41,7 +45,14 @@ public class FragmentOverrideApplicationTest {
 		RuntimeDelegate.setInstance(runtimeDelegate);
 
 		JSONFactory jsonFactory = Mockito.mock(JSONFactory.class);
-		Mockito.when(jsonFactory.createJSONObject()).thenAnswer(invocation -> _createMockJSONObject());
+		Mockito.when(jsonFactory.createJSONObject()).thenAnswer(invocation -> _createMockJSONObject(new LinkedHashMap<>()));
+		Mockito.when(jsonFactory.createJSONObject(Mockito.anyString())).thenAnswer(invocation -> {
+			String jsonStr = invocation.getArgument(0);
+			if (jsonStr == null || jsonStr.trim().isEmpty()) {
+				return _createMockJSONObject(new LinkedHashMap<>());
+			}
+			return _parseMockJSON(jsonStr);
+		});
 		new JSONFactoryUtil().setJSONFactory(jsonFactory);
 
 		_portal = Mockito.mock(Portal.class);
@@ -236,9 +247,252 @@ public class FragmentOverrideApplicationTest {
 		Mockito.verify(_fragmentEntryLinkLocalService).updateFragmentEntryLink(55555L, 101L, "{\"key\":\"updated\"}", true);
 	}
 
-	private JSONObject _createMockJSONObject() {
+	@Test
+	public void testUpdateDeepMergePartialOverridesOverExisting() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User caller = Mockito.mock(User.class);
+		Mockito.when(caller.isDefaultUser()).thenReturn(false);
+		Mockito.when(caller.getUserId()).thenReturn(55555L);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(caller);
+
+		FragmentEntryLink link = Mockito.mock(FragmentEntryLink.class);
+		Mockito.when(link.getGroupId()).thenReturn(3001L);
+		Mockito.when(link.getEditableValues()).thenReturn(
+			"{\"title\":{\"value\":\"Original\"},\"endpoint\":\"http://old\",\"active\":true}");
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(101L)).thenReturn(link);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _application.updateFragmentEntryLink(
+			_httpServletRequest, 101L, "{\"endpoint\":\"http://new\"}");
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		Mockito.verify(_fragmentEntryLinkLocalService).updateFragmentEntryLink(
+			55555L, 101L,
+			"{\"title\":{\"value\":\"Original\"},\"endpoint\":\"http://new\",\"active\":true}",
+			true);
+	}
+
+	@Test
+	public void testUpdateDeepMergeNestedObjects() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User caller = Mockito.mock(User.class);
+		Mockito.when(caller.isDefaultUser()).thenReturn(false);
+		Mockito.when(caller.getUserId()).thenReturn(55555L);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(caller);
+
+		FragmentEntryLink link = Mockito.mock(FragmentEntryLink.class);
+		Mockito.when(link.getGroupId()).thenReturn(3001L);
+		Mockito.when(link.getEditableValues()).thenReturn(
+			"{\"banner\":{\"img\":\"/old.png\",\"alt\":\"Old alt\"}}");
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(101L)).thenReturn(link);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _application.updateFragmentEntryLink(
+			_httpServletRequest, 101L, "{\"banner\":{\"alt\":\"New alt\"}}");
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		Mockito.verify(_fragmentEntryLinkLocalService).updateFragmentEntryLink(
+			55555L, 101L,
+			"{\"banner\":{\"img\":\"/old.png\",\"alt\":\"New alt\"}}",
+			true);
+	}
+
+	@Test
+	public void testUpdateDeepMergeWhenExistingValuesEmptyOrNull() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User caller = Mockito.mock(User.class);
+		Mockito.when(caller.isDefaultUser()).thenReturn(false);
+		Mockito.when(caller.getUserId()).thenReturn(55555L);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(caller);
+
+		FragmentEntryLink link = Mockito.mock(FragmentEntryLink.class);
+		Mockito.when(link.getGroupId()).thenReturn(3001L);
+		Mockito.when(link.getEditableValues()).thenReturn(null);
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(101L)).thenReturn(link);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _application.updateFragmentEntryLink(
+			_httpServletRequest, 101L, "{\"key\":\"new\"}");
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		Mockito.verify(_fragmentEntryLinkLocalService).updateFragmentEntryLink(
+			55555L, 101L, "{\"key\":\"new\"}", true);
+	}
+
+	@Test
+	public void testUpdateCorruptedExistingEditableValuesReturnsConflict() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User caller = Mockito.mock(User.class);
+		Mockito.when(caller.isDefaultUser()).thenReturn(false);
+		Mockito.when(caller.getUserId()).thenReturn(55555L);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(caller);
+
+		FragmentEntryLink link = Mockito.mock(FragmentEntryLink.class);
+		Mockito.when(link.getGroupId()).thenReturn(3001L);
+		Mockito.when(link.getEditableValues()).thenReturn("{corrupted json not valid:");
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(101L)).thenReturn(link);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _application.updateFragmentEntryLink(
+			_httpServletRequest, 101L, "{\"endpoint\":\"http://new\"}");
+
+		Assert.assertEquals(Response.Status.CONFLICT.getStatusCode(), response.getStatus());
+		Assert.assertTrue(response.getEntity().toString().contains("CorruptedState"));
+
+		// Verify service was NEVER called, guaranteeing the existing row was not overwritten
+		Mockito.verify(_fragmentEntryLinkLocalService, Mockito.never()).updateFragmentEntryLink(
+			Mockito.anyLong(), Mockito.anyLong(), Mockito.anyString(), Mockito.anyBoolean());
+	}
+
+	@Test
+	public void testUpdateInvalidJsonPayloadReturnsBadRequest() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		Response response = _application.updateFragmentEntryLink(
+			_httpServletRequest, 101L, "invalid-json");
+
+		Assert.assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
+		Assert.assertTrue(response.getEntity().toString().contains("BadRequest"));
+	}
+
+	@Test
+	public void testPatchFragmentEntryLinkSuccess() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User caller = Mockito.mock(User.class);
+		Mockito.when(caller.isDefaultUser()).thenReturn(false);
+		Mockito.when(caller.getUserId()).thenReturn(55555L);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(caller);
+
+		FragmentEntryLink link = Mockito.mock(FragmentEntryLink.class);
+		Mockito.when(link.getGroupId()).thenReturn(3001L);
+		Mockito.when(link.getEditableValues()).thenReturn("{\"k1\":\"v1\"}");
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(101L)).thenReturn(link);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _application.patchFragmentEntryLink(
+			_httpServletRequest, 101L, "{\"k2\":\"v2\"}");
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		Mockito.verify(_fragmentEntryLinkLocalService).updateFragmentEntryLink(
+			55555L, 101L, "{\"k1\":\"v1\",\"k2\":\"v2\"}", true);
+	}
+
+	@Test
+	public void testGetFragmentEntryLinkSuccess() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User caller = Mockito.mock(User.class);
+		Mockito.when(caller.isDefaultUser()).thenReturn(false);
+		Mockito.when(caller.getUserId()).thenReturn(55555L);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(caller);
+
+		FragmentEntryLink link = Mockito.mock(FragmentEntryLink.class);
+		Mockito.when(link.getFragmentEntryLinkId()).thenReturn(101L);
+		Mockito.when(link.getGroupId()).thenReturn(3001L);
+		Mockito.when(link.getPlid()).thenReturn(4001L);
+		Mockito.when(link.getEditableValues()).thenReturn("{\"endpoint\":\"http://api\"}");
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(101L)).thenReturn(link);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _application.getFragmentEntryLink(_httpServletRequest, 101L);
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		Assert.assertTrue(response.getEntity().toString().contains("\"endpoint\":\"http://api\""));
+	}
+
+	@Test
+	public void testGetFragmentEntryLinkNotFound() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User caller = Mockito.mock(User.class);
+		Mockito.when(caller.isDefaultUser()).thenReturn(false);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(caller);
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(999L)).thenReturn(null);
+
+		Response response = _application.getFragmentEntryLink(_httpServletRequest, 999L);
+
+		Assert.assertEquals(Response.Status.NOT_FOUND.getStatusCode(), response.getStatus());
+	}
+
+	@Test
+	public void testGetFragmentEntryLinkForbidden() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User caller = Mockito.mock(User.class);
+		Mockito.when(caller.isDefaultUser()).thenReturn(false);
+		Mockito.when(caller.getCompanyId()).thenReturn(2001L);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(caller);
+
+		FragmentEntryLink link = Mockito.mock(FragmentEntryLink.class);
+		Mockito.when(link.getGroupId()).thenReturn(3001L);
+		Mockito.when(link.getPlid()).thenReturn(4001L);
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(101L)).thenReturn(link);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(false);
+		Mockito.when(permissionChecker.isCompanyAdmin(2001L)).thenReturn(false);
+		Mockito.when(permissionChecker.isGroupAdmin(3001L)).thenReturn(false);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Layout layout = Mockito.mock(Layout.class);
+		Mockito.when(_layoutLocalService.fetchLayout(4001L)).thenReturn(layout);
+		Mockito.when(_layoutPermission.contains(permissionChecker, layout, ActionKeys.UPDATE)).thenReturn(false);
+
+		Response response = _application.getFragmentEntryLink(_httpServletRequest, 101L);
+
+		Assert.assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
+	}
+
+	@Test
+	public void testUpdateReplacesArraysWholesale() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User caller = Mockito.mock(User.class);
+		Mockito.when(caller.isDefaultUser()).thenReturn(false);
+		Mockito.when(caller.getUserId()).thenReturn(55555L);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(caller);
+
+		FragmentEntryLink link = Mockito.mock(FragmentEntryLink.class);
+		Mockito.when(link.getGroupId()).thenReturn(3001L);
+		Mockito.when(link.getEditableValues()).thenReturn("{\"items\":[1,2]}");
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(101L)).thenReturn(link);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _application.updateFragmentEntryLink(
+			_httpServletRequest, 101L, "{\"items\":[3,4,5]}");
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		Mockito.verify(_fragmentEntryLinkLocalService).updateFragmentEntryLink(
+			55555L, 101L, "{\"items\":[3,4,5]}", true);
+	}
+
+	private JSONObject _parseMockJSON(String jsonStr) throws JSONException {
+		return new SimpleJSONParser(jsonStr).parseObjectMock();
+	}
+
+	private JSONObject _createMockJSONObject(Map<String, Object> map) {
 		JSONObject jsonObject = Mockito.mock(JSONObject.class);
-		Map<String, Object> map = new LinkedHashMap<>();
+
+		Mockito.doAnswer(invocation -> {
+			map.put(invocation.getArgument(0), invocation.getArgument(1));
+			return jsonObject;
+		}).when(jsonObject).put(Mockito.anyString(), Mockito.any(Object.class));
 
 		Mockito.doAnswer(invocation -> {
 			map.put(invocation.getArgument(0), invocation.getArgument(1));
@@ -255,28 +509,355 @@ public class FragmentOverrideApplicationTest {
 			return jsonObject;
 		}).when(jsonObject).put(Mockito.anyString(), Mockito.anyLong());
 
-		Mockito.when(jsonObject.toString()).thenAnswer(invocation -> {
+		Mockito.doAnswer(invocation -> {
+			map.put(invocation.getArgument(0), invocation.getArgument(1));
+			return jsonObject;
+		}).when(jsonObject).put(Mockito.anyString(), Mockito.anyDouble());
+
+		Mockito.doAnswer(invocation -> {
+			map.put(invocation.getArgument(0), invocation.getArgument(1));
+			return jsonObject;
+		}).when(jsonObject).put(Mockito.anyString(), Mockito.anyInt());
+
+		Mockito.doAnswer(invocation -> {
+			map.put(invocation.getArgument(0), invocation.getArgument(1));
+			return jsonObject;
+		}).when(jsonObject).put(Mockito.anyString(), Mockito.any(JSONObject.class));
+
+		Mockito.when(jsonObject.keySet()).thenAnswer(invocation -> map.keySet());
+		Mockito.when(jsonObject.keys()).thenAnswer(invocation -> map.keySet().iterator());
+
+		Mockito.when(jsonObject.get(Mockito.anyString())).thenAnswer(invocation -> {
+			String key = invocation.getArgument(0);
+			Object val = map.get(key);
+			if (val instanceof Map) {
+				JSONObject child = _createMockJSONObject((Map<String, Object>) val);
+				map.put(key, child);
+				return child;
+			}
+			return val;
+		});
+
+		Mockito.when(jsonObject.getString(Mockito.anyString())).thenAnswer(invocation -> {
+			Object val = map.get(invocation.getArgument(0));
+			return val != null ? String.valueOf(val) : null;
+		});
+
+		Mockito.when(jsonObject.toString()).thenAnswer(invocation -> _serializeJSON(map));
+
+		return jsonObject;
+	}
+
+	private String _serializeJSON(Object obj) {
+		if (obj == null) {
+			return "null";
+		}
+		if (obj instanceof String) {
+			return "\"" + obj + "\"";
+		}
+		if (obj instanceof Number || obj instanceof Boolean) {
+			return String.valueOf(obj);
+		}
+		if (obj instanceof JSONObject) {
+			return obj.toString();
+		}
+		if (obj instanceof Map) {
 			StringBuilder sb = new StringBuilder("{");
 			boolean first = true;
-			for (Map.Entry<String, Object> entry : map.entrySet()) {
+			for (Map.Entry<?, ?> entry : ((Map<?, ?>) obj).entrySet()) {
 				if (!first) {
 					sb.append(",");
 				}
 				sb.append("\"").append(entry.getKey()).append("\":");
-				Object val = entry.getValue();
-				if (val instanceof String) {
-					sb.append("\"").append(val).append("\"");
-				}
-				else {
-					sb.append(val);
-				}
+				sb.append(_serializeJSON(entry.getValue()));
 				first = false;
 			}
 			sb.append("}");
 			return sb.toString();
-		});
+		}
+		if (obj instanceof List) {
+			StringBuilder sb = new StringBuilder("[");
+			boolean first = true;
+			for (Object item : (List<?>) obj) {
+				if (!first) {
+					sb.append(",");
+				}
+				sb.append(_serializeJSON(item));
+				first = false;
+			}
+			sb.append("]");
+			return sb.toString();
+		}
+		return "\"" + obj.toString() + "\"";
+	}
 
-		return jsonObject;
+	private static class SimpleJSONParser {
+		private final String src;
+		private int pos = 0;
+
+		SimpleJSONParser(String src) {
+			this.src = src.trim();
+		}
+
+		JSONObject parseObjectMock() throws JSONException {
+			skipWhitespace();
+			if (pos >= src.length()) {
+				throw new JSONException("Empty input");
+			}
+			if (src.charAt(pos) != '{') {
+				throw new JSONException("Expected '{' at start of object");
+			}
+			Map<String, Object> map = parseObject();
+			JSONObject mock = Mockito.mock(JSONObject.class);
+			return buildMock(map);
+		}
+
+		private JSONObject buildMock(Map<String, Object> map) {
+			JSONObject jsonObject = Mockito.mock(JSONObject.class);
+
+			Mockito.doAnswer(invocation -> {
+				map.put(invocation.getArgument(0), invocation.getArgument(1));
+				return jsonObject;
+			}).when(jsonObject).put(Mockito.anyString(), Mockito.any(Object.class));
+
+			Mockito.doAnswer(invocation -> {
+				map.put(invocation.getArgument(0), invocation.getArgument(1));
+				return jsonObject;
+			}).when(jsonObject).put(Mockito.anyString(), Mockito.any(String.class));
+
+			Mockito.doAnswer(invocation -> {
+				map.put(invocation.getArgument(0), invocation.getArgument(1));
+				return jsonObject;
+			}).when(jsonObject).put(Mockito.anyString(), Mockito.anyBoolean());
+
+			Mockito.doAnswer(invocation -> {
+				map.put(invocation.getArgument(0), invocation.getArgument(1));
+				return jsonObject;
+			}).when(jsonObject).put(Mockito.anyString(), Mockito.anyLong());
+
+			Mockito.doAnswer(invocation -> {
+				map.put(invocation.getArgument(0), invocation.getArgument(1));
+				return jsonObject;
+			}).when(jsonObject).put(Mockito.anyString(), Mockito.anyDouble());
+
+			Mockito.doAnswer(invocation -> {
+				map.put(invocation.getArgument(0), invocation.getArgument(1));
+				return jsonObject;
+			}).when(jsonObject).put(Mockito.anyString(), Mockito.anyInt());
+
+			Mockito.doAnswer(invocation -> {
+				map.put(invocation.getArgument(0), invocation.getArgument(1));
+				return jsonObject;
+			}).when(jsonObject).put(Mockito.anyString(), Mockito.any(JSONObject.class));
+
+			Mockito.when(jsonObject.keySet()).thenAnswer(invocation -> map.keySet());
+			Mockito.when(jsonObject.keys()).thenAnswer(invocation -> map.keySet().iterator());
+
+			Mockito.when(jsonObject.get(Mockito.anyString())).thenAnswer(invocation -> {
+				String key = invocation.getArgument(0);
+				Object val = map.get(key);
+				if (val instanceof Map) {
+					JSONObject child = buildMock((Map<String, Object>) val);
+					map.put(key, child);
+					return child;
+				}
+				return val;
+			});
+
+			Mockito.when(jsonObject.getString(Mockito.anyString())).thenAnswer(invocation -> {
+				Object val = map.get(invocation.getArgument(0));
+				return val != null ? String.valueOf(val) : null;
+			});
+
+			Mockito.when(jsonObject.toString()).thenAnswer(invocation -> serialize(map));
+
+			return jsonObject;
+		}
+
+		private String serialize(Object obj) {
+			if (obj == null) return "null";
+			if (obj instanceof String) return "\"" + obj + "\"";
+			if (obj instanceof Number || obj instanceof Boolean) return String.valueOf(obj);
+			if (obj instanceof JSONObject) return obj.toString();
+			if (obj instanceof Map) {
+				StringBuilder sb = new StringBuilder("{");
+				boolean first = true;
+				for (Map.Entry<?, ?> entry : ((Map<?, ?>) obj).entrySet()) {
+					if (!first) sb.append(",");
+					sb.append("\"").append(entry.getKey()).append("\":");
+					sb.append(serialize(entry.getValue()));
+					first = false;
+				}
+				sb.append("}");
+				return sb.toString();
+			}
+			if (obj instanceof List) {
+				StringBuilder sb = new StringBuilder("[");
+				boolean first = true;
+				for (Object item : (List<?>) obj) {
+					if (!first) sb.append(",");
+					sb.append(serialize(item));
+					first = false;
+				}
+				sb.append("]");
+				return sb.toString();
+			}
+			return "\"" + obj.toString() + "\"";
+		}
+
+		private Object parseValue() throws JSONException {
+			skipWhitespace();
+			if (pos >= src.length()) {
+				throw new JSONException("Unexpected end of input");
+			}
+			char c = src.charAt(pos);
+			if (c == '{') return parseObject();
+			if (c == '[') return parseArray();
+			if (c == '"') return parseString();
+			if (c == 't' || c == 'f') return parseBoolean();
+			if (c == 'n') return parseNull();
+			if (Character.isDigit(c) || c == '-') return parseNumber();
+			throw new JSONException("Unexpected character at " + pos + ": " + c);
+		}
+
+		private void skipWhitespace() {
+			while (pos < src.length() && Character.isWhitespace(src.charAt(pos))) {
+				pos++;
+			}
+		}
+
+		private Map<String, Object> parseObject() throws JSONException {
+			Map<String, Object> map = new LinkedHashMap<>();
+			pos++; // skip '{'
+			skipWhitespace();
+			if (pos < src.length() && src.charAt(pos) == '}') {
+				pos++;
+				return map;
+			}
+			while (pos < src.length()) {
+				skipWhitespace();
+				if (src.charAt(pos) != '"') {
+					throw new JSONException("Expected '\"' for key at " + pos);
+				}
+				String key = parseString();
+				skipWhitespace();
+				if (pos >= src.length() || src.charAt(pos) != ':') {
+					throw new JSONException("Expected ':' after key at " + pos);
+				}
+				pos++; // skip ':'
+				skipWhitespace();
+				Object val = parseValue();
+				map.put(key, val);
+				skipWhitespace();
+				if (pos < src.length() && src.charAt(pos) == ',') {
+					pos++;
+				}
+				else if (pos < src.length() && src.charAt(pos) == '}') {
+					pos++;
+					return map;
+				}
+				else {
+					throw new JSONException("Expected ',' or '}' at " + pos);
+				}
+			}
+			throw new JSONException("Unterminated object");
+		}
+
+		private List<Object> parseArray() throws JSONException {
+			List<Object> list = new ArrayList<>();
+			pos++; // skip '['
+			skipWhitespace();
+			if (pos < src.length() && src.charAt(pos) == ']') {
+				pos++;
+				return list;
+			}
+			while (pos < src.length()) {
+				skipWhitespace();
+				Object val = parseValue();
+				list.add(val);
+				skipWhitespace();
+				if (pos < src.length() && src.charAt(pos) == ',') {
+					pos++;
+				}
+				else if (pos < src.length() && src.charAt(pos) == ']') {
+					pos++;
+					return list;
+				}
+				else {
+					throw new JSONException("Expected ',' or ']' at " + pos);
+				}
+			}
+			throw new JSONException("Unterminated array");
+		}
+
+		private String parseString() throws JSONException {
+			pos++; // skip '"'
+			StringBuilder sb = new StringBuilder();
+			while (pos < src.length()) {
+				char c = src.charAt(pos++);
+				if (c == '"') {
+					return sb.toString();
+				}
+				if (c == '\\') {
+					if (pos >= src.length()) throw new JSONException("Invalid escape");
+					char esc = src.charAt(pos++);
+					if (esc == '"') sb.append('"');
+					else if (esc == '\\') sb.append('\\');
+					else if (esc == '/') sb.append('/');
+					else if (esc == 'b') sb.append('\b');
+					else if (esc == 'f') sb.append('\f');
+					else if (esc == 'n') sb.append('\n');
+					else if (esc == 'r') sb.append('\r');
+					else if (esc == 't') sb.append('\t');
+					else sb.append(esc);
+				}
+				else {
+					sb.append(c);
+				}
+			}
+			throw new JSONException("Unterminated string");
+		}
+
+		private Boolean parseBoolean() throws JSONException {
+			if (src.startsWith("true", pos)) {
+				pos += 4;
+				return Boolean.TRUE;
+			}
+			if (src.startsWith("false", pos)) {
+				pos += 5;
+				return Boolean.FALSE;
+			}
+			throw new JSONException("Invalid boolean at " + pos);
+		}
+
+		private Object parseNull() throws JSONException {
+			if (src.startsWith("null", pos)) {
+				pos += 4;
+				return null;
+			}
+			throw new JSONException("Invalid null at " + pos);
+		}
+
+		private Number parseNumber() {
+			int start = pos;
+			if (src.charAt(pos) == '-') pos++;
+			while (pos < src.length() && Character.isDigit(src.charAt(pos))) pos++;
+			boolean isFloating = false;
+			if (pos < src.length() && src.charAt(pos) == '.') {
+				isFloating = true;
+				pos++;
+				while (pos < src.length() && Character.isDigit(src.charAt(pos))) pos++;
+			}
+			String numStr = src.substring(start, pos);
+			if (isFloating) {
+				return Double.valueOf(numStr);
+			}
+			try {
+				return Long.valueOf(numStr);
+			} catch (NumberFormatException e) {
+				return Double.valueOf(numStr);
+			}
+		}
 	}
 
 	private void _setField(Object target, String fieldName, Object value) throws Exception {
