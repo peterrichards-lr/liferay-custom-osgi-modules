@@ -1,1 +1,65 @@
 // Check GETTING_STARTED.md for information regarding usage.
+
+// Publishing to GitHub Packages.
+//
+// Applied to every module subproject rather than declared per module, so a new
+// module is publishable by existing rather than by remembering to opt in.
+//
+// Note the registry's constraint: GitHub Packages' Maven registry requires
+// authentication even for PUBLIC packages -- only the Container registry allows
+// anonymous pulls. Consumers therefore need a token with `read:packages` just
+// to resolve a dependency from here. That is a property of the registry, not of
+// this configuration; see README.md for the anonymous alternative.
+subprojects {
+	afterEvaluate { project ->
+		if (!project.plugins.hasPlugin("java")) {
+			return
+		}
+
+		project.apply plugin: "maven-publish"
+
+		project.group = "com.liferay.custom.osgi"
+
+		project.publishing {
+			publications {
+				bundle(MavenPublication) {
+					from project.components.java
+
+					artifactId = project.name
+
+					pom {
+						name = project.name
+						description = "OSGi module from liferay-custom-osgi-modules"
+						url = "https://github.com/peterrichards-lr/liferay-custom-osgi-modules"
+
+						licenses {
+							license {
+								name = "The Apache License, Version 2.0"
+								url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+							}
+						}
+
+						scm {
+							url = "https://github.com/peterrichards-lr/liferay-custom-osgi-modules"
+						}
+					}
+				}
+			}
+
+			repositories {
+				maven {
+					name = "GitHubPackages"
+					url = "https://maven.pkg.github.com/peterrichards-lr/liferay-custom-osgi-modules"
+
+					credentials {
+						// GITHUB_ACTOR/GITHUB_TOKEN are set for us in Actions.
+						// Locally, export GITHUB_ACTOR and a PAT with
+						// write:packages as GITHUB_TOKEN.
+						username = System.getenv("GITHUB_ACTOR")
+						password = System.getenv("GITHUB_TOKEN")
+					}
+				}
+			}
+		}
+	}
+}

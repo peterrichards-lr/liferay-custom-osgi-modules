@@ -32,8 +32,21 @@ them as meaningful.
 - **`Import-Package` ranges are the real risk.** Consumers run a wide span of
   Liferay versions and a bundle compiled against one `com.liferay.*` API
   version may not resolve against another. Never ship whatever bnd infers.
+- **One artifact vs one per Liferay line is UNDECIDED** — see README. Do not
+  build per-tag pipelines pre-emptively; the question is empirical (do the
+  exported package versions actually change across the supported span?) and no
+  module imports `com.liferay.*` yet, so there is no evidence either way.
+  Settle it with a resolution matrix, not by assumption.
 - **Name modules for the capability, not the consumer.** The next project to
   need one should not have to read another project's name to understand it.
+- **Publishing is release-triggered, never merge-triggered.** A registry
+  coordinate is immutable once consumed. `.github/workflows/publish.yml` fires
+  on a published release.
+- **GitHub Packages requires auth even for public packages.** Only the
+  Container registry allows anonymous pulls, so release assets are the
+  anonymous route and the primary one — an OSGi bundle is normally consumed as
+  a file, not as a compile dependency. Do not describe the registry as though
+  it were open.
 - **Project-specific modules do not belong here.** They stay with their
   project; reuse happens through published artifacts.
 

@@ -86,19 +86,109 @@ The JAR lands in `modules/fragment-override/build/libs/`.
 
 ## Consuming a module
 
-Deploy the JAR into a running instance's `osgi/modules`. With LDM:
+There are two routes, and which one you want depends on whether you need a
+build-time dependency or just the bundle.
+
+### As a file (no authentication)
+
+The usual case. An OSGi bundle is consumed by being dropped into a running
+instance's `osgi/modules`, not by being compiled against.
+
+Every release attaches its JARs as release assets, which are downloadable
+anonymously:
 
 ```bash
-ldm deploy <project> modules/fragment-override/build/libs/<name>.jar
+gh release download --repo peterrichards-lr/liferay-custom-osgi-modules \
+  --pattern '*.jar'
+
+ldm deploy <project> com.liferay.fragment.override-1.0.0.jar
 ```
+
+### As a Maven/Gradle dependency (authentication required)
+
+Published to GitHub Packages as `com.liferay.custom.osgi:<module>:<version>`.
+
+**GitHub Packages' Maven registry requires authentication even for public
+packages** — only the Container registry allows anonymous pulls. So consuming
+this way needs a token with `read:packages`, which is friction the release
+assets above avoid. Use this route when you genuinely need a resolvable
+coordinate; otherwise take the file.
+
+```gradle
+repositories {
+    maven {
+        url "https://maven.pkg.github.com/peterrichards-lr/liferay-custom-osgi-modules"
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")   // needs read:packages
+        }
+    }
+}
+
+dependencies {
+    compileOnly group: "com.liferay.custom.osgi", name: "fragment-override", version: "1.0.0"
+}
+```
+
+## Publishing
+
+Publishing is triggered by **publishing a GitHub release**, not by merging: a
+registry coordinate is immutable once someone consumes it, so it should be a
+deliberate act with a version behind it.
+
+`.github/workflows/publish.yml` builds, checks that no bundle imports
+`com.liferay.*` without a version range, publishes to GitHub Packages, and
+attaches the JARs to the release.
+
+To rehearse without publishing, run the workflow manually with `dry_run` left
+at its default.
 
 ## Liferay version
 
 `gradle.properties` pins `liferay.workspace.product=dxp-2026.q1.12-lts`.
 
-That pin is a **compile target, not a support range.** Consumers may run a wide
-span of Liferay versions, and a bundle compiled against one
-`com.liferay.fragment.api` may not resolve against another — the javadocs show
-51.0.1 and 57.0.0 for different releases. Any module shipped from here needs a
-deliberate `Import-Package` range and testing at both ends of the range it
-claims to support.
+That pin is a **compile target, not a support range.**
+
+### Open decision: one artifact, or one per Liferay line?
+
+This is the repo's central unresolved question, and it should be settled with
+evidence before a second module is added.
+
+**The case for one artifact per Liferay tag** — mirroring how LDM manages
+pre-warmed seeds — is that it is guaranteed correct. Every consumer gets a
+bundle built against exactly their line, and no resolution surprise is
+possible.
+
+**The case against** is that it is not what OSGi is for. A seed is a database
+and filesystem snapshot: inherently version-specific, with no mechanism for
+spanning versions. A bundle is code compiled against an API, and OSGi's package
+versioning exists precisely so that one artifact can declare
+`Import-Package: com.liferay.fragment.service;version="[X,Y)"` and resolve
+across every runtime in that range. Shipping one artifact per tag gives up that
+mechanism, and produces N artifacts that are usually byte-identical.
+
+**The question is empirical, not architectural:** do the *exported package*
+versions actually change across the Liferay lines we care about? If
+`com.liferay.fragment.service` exports the same package version from
+2025.q4 through 2026.q1, one bundle covers both and per-tag builds are waste.
+If Liferay bumped the package major version, no single range can span it and
+per-line artifacts are unavoidable.
+
+Nothing here answers that yet, because `fragment-override` is a scaffold that
+imports **no** `com.liferay.*` packages at all — its manifest reads
+`Import-Package: jakarta.ws.rs,jakarta.ws.rs.core,java.lang,java.util`. There
+is currently zero evidence in either direction.
+
+**Proposed way to settle it**, in order:
+
+1. Make the first module import what it actually needs, and read the resulting
+   `Import-Package` range off the manifest.
+2. Add a CI matrix that *resolves* that bundle against each Liferay line to be
+   supported — resolution, not compilation, is the thing that fails.
+3. Ship one artifact if the matrix is green. Only if resolution genuinely fails
+   across the span, fall back to per-line artifacts, versioned
+   `<module>-<version>-dxp-<line>`.
+
+Doing (3) pre-emptively would be building N pipelines to solve a problem that
+may not exist; doing (1) and (2) costs one module's worth of work and answers
+it for every module afterwards.

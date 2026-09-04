@@ -1,0 +1,77 @@
+name: Publish modules
+
+# Releases are the trigger, not pushes to main: a registry coordinate is
+# immutable once consumed, so publishing should be a deliberate act with a
+# version behind it rather than a side effect of merging.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and verify without publishing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # attach the JAR to the release
+  packages: write   # publish to GitHub Packages
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build
+        run: ./gradlew build --no-daemon
+
+      - name: Verify every bundle declares Import-Package versions
+        # The risk this repo keeps warning about: bnd infers unversioned
+        # imports unless told otherwise, and an unversioned import is how a
+        # bundle silently fails to resolve on a different Liferay line.
+        # Warn rather than fail while fragment-override is still a scaffold
+        # that imports no Liferay API -- tighten to a failure once a module
+        # genuinely depends on com.liferay.*.
+        run: |
+          status=0
+          for jar in modules/*/build/libs/*.jar; do
+            [ -e "$jar" ] || continue
+            imports=$(unzip -p "$jar" META-INF/MANIFEST.MF | tr -d '\r\n' \
+              | sed -n 's/.*Import-Package: \([^A-Z]*\).*/\1/p')
+            case "$imports" in
+              *com.liferay*)
+                echo "$imports" | grep -q 'version=' || {
+                  echo "::error::$jar imports com.liferay.* with no version range"
+                  status=1
+                }
+                ;;
+              *)
+                echo "::notice::$(basename "$jar") imports no com.liferay.* packages" ;;
+            esac
+          done
+          exit $status
+
+      - name: Publish to GitHub Packages
+        if: github.event_name == 'release' || inputs.dry_run == false
+        run: ./gradlew publish --no-daemon
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attach JARs to the release
+        # GitHub Packages' Maven registry requires authentication even for
+        # public packages, so a release asset is the only anonymous way to get
+        # a bundle. That matters here: the primary consumption path is a file
+        # dropped into osgi/modules, not a Maven coordinate.
+        if: github.event_name == 'release'
+        run: gh release upload "${{ github.event.release.tag_name }}" modules/*/build/libs/*.jar --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
