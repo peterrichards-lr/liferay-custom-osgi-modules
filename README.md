@@ -76,13 +76,13 @@ in `portal-ext.properties` (with `feature.flag.LPS-178052=true` accepted as a ba
 
 #### Endpoints & Merge Semantics
 
-- `PUT /o/fragment-override/fragment-entry-links/{fragmentEntryLinkId}`: Recursively deep-merges the caller's JSON payload over existing `editableValues`, preserving unmentioned keys and nested configuration objects (closes [#9](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/9), unblocking [LDM #1602](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1602)).
+- `PUT /o/fragment-override/fragment-entry-links/{fragmentEntryLinkId}`: Recursively deep-merges the caller's JSON payload over existing `editableValues`, preserving unmentioned keys and nested configuration objects (closes [#9](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/9), unblocking [LDM #1602](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1602)). If existing database values are corrupted or unparseable, the endpoint safely refuses to overwrite and returns HTTP 409 `Conflict` (`CorruptedState`).
 - `PATCH /o/fragment-override/fragment-entry-links/{fragmentEntryLinkId}`: Explicit HTTP PATCH alias supporting the same server-side deep-merge semantics.
 - `GET /o/fragment-override/fragment-entry-links/{fragmentEntryLinkId}`: Returns the current `editableValues` JSON document and layout metadata for inspection.
 - `GET /o/fragment-override/status`: Reports module status and feature flag enablement.
 
 #### Authentication & Permissions
-Mutation endpoints require an authenticated user with omniadmin, company admin, group admin, or layout `UPDATE` permission. The inspection `GET` endpoint requires layout `VIEW` permission.
+All mutation and inspection endpoints require an authenticated user with omniadmin, company admin, group admin, or layout `UPDATE` permission (protecting sensitive service endpoints and configuration).
 
 Background:
 [liferay-docker-manager#883](https://github.com/peterrichards-lr/liferay-docker-manager/issues/883)

@@ -329,6 +329,34 @@ public class FragmentOverrideApplicationTest {
 	}
 
 	@Test
+	public void testUpdateCorruptedExistingEditableValuesReturnsConflict() throws Exception {
+		PropsUtil.set("feature.flag.LPD-99955", "true");
+		User caller = Mockito.mock(User.class);
+		Mockito.when(caller.isDefaultUser()).thenReturn(false);
+		Mockito.when(caller.getUserId()).thenReturn(55555L);
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(caller);
+
+		FragmentEntryLink link = Mockito.mock(FragmentEntryLink.class);
+		Mockito.when(link.getGroupId()).thenReturn(3001L);
+		Mockito.when(link.getEditableValues()).thenReturn("{corrupted json not valid:");
+		Mockito.when(_fragmentEntryLinkLocalService.fetchFragmentEntryLink(101L)).thenReturn(link);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _application.updateFragmentEntryLink(
+			_httpServletRequest, 101L, "{\"endpoint\":\"http://new\"}");
+
+		Assert.assertEquals(Response.Status.CONFLICT.getStatusCode(), response.getStatus());
+		Assert.assertTrue(response.getEntity().toString().contains("CorruptedState"));
+
+		// Verify service was NEVER called, guaranteeing the existing row was not overwritten
+		Mockito.verify(_fragmentEntryLinkLocalService, Mockito.never()).updateFragmentEntryLink(
+			Mockito.anyLong(), Mockito.anyLong(), Mockito.anyString(), Mockito.anyBoolean());
+	}
+
+	@Test
 	public void testUpdateInvalidJsonPayloadReturnsBadRequest() throws Exception {
 		PropsUtil.set("feature.flag.LPD-99955", "true");
 		Response response = _application.updateFragmentEntryLink(
@@ -422,7 +450,7 @@ public class FragmentOverrideApplicationTest {
 
 		Layout layout = Mockito.mock(Layout.class);
 		Mockito.when(_layoutLocalService.fetchLayout(4001L)).thenReturn(layout);
-		Mockito.when(_layoutPermission.contains(permissionChecker, layout, ActionKeys.VIEW)).thenReturn(false);
+		Mockito.when(_layoutPermission.contains(permissionChecker, layout, ActionKeys.UPDATE)).thenReturn(false);
 
 		Response response = _application.getFragmentEntryLink(_httpServletRequest, 101L);
 

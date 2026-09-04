@@ -178,12 +178,15 @@ public class FragmentOverrideApplication extends Application {
 					targetJSON = JSONFactoryUtil.createJSONObject(currentEditableValues);
 				}
 				catch (JSONException jsonException) {
-					_log.warn(
+					_log.error(
 						"Existing editableValues on fragment " + fragmentEntryLinkId +
-							" is invalid JSON; starting with fresh object",
+							" is not valid JSON; refusing to overwrite",
 						jsonException);
 
-					targetJSON = JSONFactoryUtil.createJSONObject();
+					return _jsonError(
+						Response.Status.CONFLICT, "CorruptedState",
+						"Existing editableValues could not be parsed. Refusing to overwrite " +
+							"it with a partial update.");
 				}
 			}
 
@@ -251,7 +254,7 @@ public class FragmentOverrideApplication extends Application {
 			PermissionChecker permissionChecker =
 				PermissionThreadLocal.getPermissionChecker();
 
-			if (!_hasViewPermission(permissionChecker, user, fragmentEntryLink)) {
+			if (!_hasUpdatePermission(permissionChecker, user, fragmentEntryLink)) {
 				return _jsonError(
 					Response.Status.FORBIDDEN, "Forbidden",
 					"User does not have permission to view this fragment entry link.");
@@ -316,32 +319,6 @@ public class FragmentOverrideApplication extends Application {
 		}
 
 		return target;
-	}
-
-	private boolean _hasViewPermission(
-			PermissionChecker permissionChecker, User user,
-			FragmentEntryLink fragmentEntryLink)
-		throws Exception {
-
-		if (permissionChecker == null) {
-			return false;
-		}
-
-		if (permissionChecker.isOmniadmin() ||
-			permissionChecker.isCompanyAdmin(user.getCompanyId()) ||
-			permissionChecker.isGroupAdmin(fragmentEntryLink.getGroupId())) {
-
-			return true;
-		}
-
-		Layout layout = _layoutLocalService.fetchLayout(fragmentEntryLink.getPlid());
-
-		if (layout == null) {
-			return false;
-		}
-
-		return LayoutPermissionUtil.contains(
-			permissionChecker, layout, ActionKeys.VIEW);
 	}
 
 	private boolean _hasUpdatePermission(
