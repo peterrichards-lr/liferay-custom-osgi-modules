@@ -103,12 +103,11 @@ This module provides a secure JAX-RS whiteboard endpoint:
 - `POST /o/search-reindex/reindex/{className}`: Schedules reindexing for the specified entity class.
 - `GET /o/search-reindex/status`: Healthcheck returning `{"status":"active","module":"search-reindex"}`.
 
-**Backward-compatibility**: the module also answers requests on `/o/aica-reindex` to ensure existing callers and SDK versions continue functioning seamlessly during cutover.
-
 #### Security & Permissions
 The endpoint is strictly gated:
 - Unauthenticated / guest requests return HTTP 401 `Unauthorized`.
 - Non-omniadmin callers return HTTP 403 `Forbidden`.
+- OAuth callers require the `Custom.Search.Reindex` scope (derived from `osgi.jaxrs.name`), since deploying the bundle alone is not sufficient.
 
 ### commerce-site-type
 
