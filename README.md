@@ -32,6 +32,7 @@ what — add yourself there when you consume or contribute one.
 | Module | State | Solves |
 |---|---|---|
 | [`fragment-override`](#fragment-override) | **in development** | Headless API rejects specification updates on published site initializer pages |
+| [`search-reindex`](#search-reindex) | **available** | Triggers asynchronous search reindexing for arbitrary entity classes without a published Headless or GraphQL mutation |
 
 ### fragment-override
 
@@ -78,10 +79,29 @@ Background:
 [#1601](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1601)
 (feasibility).
 
+### search-reindex
+
+Adopted from `aica-reindex-endpoint` in [liferay-ai-commerce-accelerator](https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator).
+
+No Liferay Headless REST or GraphQL API permits triggering a search reindex for an arbitrary entity model class (e.g. `com.liferay.commerce.product.model.CPDefinition`). Data-generation, seeding, and migration tools that generate content in bulk require search indexing so newly added entities appear in search and headless queries immediately.
+
+This module provides a secure JAX-RS whiteboard endpoint:
+- `POST /o/search-reindex/reindex/all`: Schedules reindexing across all portal company indexes.
+- `POST /o/search-reindex/reindex/{className}`: Schedules reindexing for the specified entity class.
+- `GET /o/search-reindex/status`: Healthcheck returning `{"status":"active","module":"search-reindex"}`.
+
+**Backward-compatibility**: the module also answers requests on `/o/aica-reindex` to ensure existing callers and SDK versions continue functioning seamlessly during cutover.
+
+#### Security & Permissions
+The endpoint is strictly gated:
+- Unauthenticated / guest requests return HTTP 401 `Unauthorized`.
+- Non-omniadmin callers return HTTP 403 `Forbidden`.
+
 ## Building
 
 ```bash
 ./gradlew :modules:fragment-override:build
+./gradlew :modules:search-reindex:build
 ```
 
 The JAR lands in `modules/fragment-override/build/libs/`.
