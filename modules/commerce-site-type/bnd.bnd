@@ -1,0 +1,13 @@
+Bundle-Name: Liferay Commerce Site Type Endpoint
+Bundle-SymbolicName: com.liferay.custom.commerce.site.type
+
+Import-Package:\
+	com.liferay.portal.kernel.exception;version="[16.0,17.0)",\
+	com.liferay.portal.kernel.json;version="[12.0,13.0)",\
+	com.liferay.portal.kernel.log;version="[10.0,11.0)",\
+	com.liferay.portal.kernel.model;version="[48.0,49.0)",\
+	com.liferay.portal.kernel.security.permission;version="[13.0,14.0)",\
+	com.liferay.portal.kernel.service;version="[52.0,53.0)",\
+	com.liferay.portal.kernel.settings;version="[6.0,7.0)",\
+	com.liferay.portal.kernel.util;version="[96.0,97.0)",\
+	*

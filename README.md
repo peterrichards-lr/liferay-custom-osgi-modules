@@ -33,6 +33,7 @@ what — add yourself there when you consume or contribute one.
 |---|---|---|
 | [`fragment-override`](#fragment-override) | **in development** | Headless API rejects specification updates on published site initializer pages |
 | [`search-reindex`](#search-reindex) | **available** | Triggers asynchronous search reindexing for arbitrary entity classes without a published Headless or GraphQL mutation |
+| [`commerce-site-type`](#commerce-site-type) | **available** | Exposes a commerce channel's B2B/B2C/B2X site type and allowed account types |
 
 ### fragment-override
 
@@ -97,14 +98,57 @@ The endpoint is strictly gated:
 - Unauthenticated / guest requests return HTTP 401 `Unauthorized`.
 - Non-omniadmin callers return HTTP 403 `Forbidden`.
 
+### commerce-site-type
+
+Exposes a commerce channel's **site type** (`B2C` / `B2B` / `B2X`) and allowed
+account types.
+
+No headless Liferay API (`/o/headless-commerce-admin-channel/v1.0/channels`) exposes
+a channel's site type. Inside Liferay, this setting is stored in group-scoped OSGi
+configuration (`com.liferay.commerce.account`) on the channel's own `Group`
+(`classNameId = CommerceChannel`, `classPK = channelId`).
+
+#### Endpoint
+
+```
+GET /o/commerce-site-type/channels/{channelId}/site-type
+```
+
+Returns:
+```json
+{
+  "channelId": 34562,
+  "siteType": 1,
+  "siteTypeLabel": "B2B",
+  "allowedAccountTypes": ["business", "supplier"],
+  "configured": true
+}
+```
+
+**The `configured` flag is critical:** Headless channel creation does not persist
+a site type configuration until saved in admin; Liferay defaults `commerceSiteType` to
+`0` (B2C) while account configuration defaults to B2X. When `configured` is `false`,
+consumers know no explicit site type was persisted and can fail open.
+
+Site types supported:
+- `0`: `B2C` (allowed account types: `["person"]`)
+- `1`: `B2B` (allowed account types: `["business", "supplier"]`)
+- `2`: `B2X` (allowed account types: `["business", "person", "supplier"]`)
+
+#### Status Healthcheck
+```
+GET /o/commerce-site-type/status
+```
+
 ## Building
 
 ```bash
 ./gradlew :modules:fragment-override:build
 ./gradlew :modules:search-reindex:build
+./gradlew :modules:commerce-site-type:build
 ```
 
-The JAR lands in `modules/fragment-override/build/libs/`.
+The JAR lands in `modules/<module-name>/build/libs/`.
 
 ## Consuming a module
 
@@ -162,7 +206,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly group: "com.liferay.custom.osgi", name: "fragment-override", version: "1.0.0"
+    compileOnly group: "com.liferay.custom.osgi", name: "commerce-site-type", version: "1.0.0"
 }
 ```
 
@@ -185,25 +229,12 @@ at its default.
 
 That pin is a **compile target, not a support range.**
 
-### Resolution: One artifact per Liferay DXP line
+### Open decision: one artifact, or one per Liferay line?
 
-The question of whether to publish a single generic artifact or one artifact per
-Liferay DXP line has been settled with empirical evidence:
-
-1. **Breaking Package Export Increments**: Inspection of target platform baselines
-   revealed that Liferay bumps major package versions across DXP quarterly lines.
-   For example, `com.liferay.fragment.service` bumped from `15.0.0` in DXP 2025.Q4
-   to `16.0.0` in DXP 2026.Q1, and `com.liferay.portal.kernel.util` sits at `96.6.0`.
-2. **Bounded OSGi Consumer Ranges**: Under OSGi semantic versioning, consumer
-   import ranges for services and models must be bounded to the current major version
-   (`[16.0, 17.0)` for `com.liferay.fragment.service`, `[5.0, 6.0)` for
-   `com.liferay.fragment.model`). A bundle compiled against 2026.Q1 cannot satisfy its
-   wiring requirements on 2025.Q4 runtimes.
-
-**Conclusion**: Bundles in this repository are strictly **per-DXP-line artifacts**.
-The `-dxp-<tag>.jar` suffix in release asset filenames (e.g.
-`com.liferay.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar`) is required and
-load-bearing to ensure consumers deploy bundles matched to their platform line.
+Settled: **one artifact per DXP line**. The resolution matrix proved that exported
+package versions differ across DXP quarterly lines, so a single bundle cannot resolve
+across all supported versions. Release assets are named
+`<module>-<version>-dxp-<line>.jar` to make the target line explicit at download time.
 
 <!-- markdownlint-disable MD049 -->
 ---
