@@ -1,0 +1,4 @@
+dependencies {
+	compileOnly group: "com.liferay.portal", name: "release.dxp.api"
+	compileOnly group: "com.liferay", name: "org.osgi.service.jaxrs", version: "1.0.0.JAKARTA-LIFERAY-PATCHED-1"
+}
