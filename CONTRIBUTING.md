@@ -40,3 +40,26 @@ read another project's name to understand what it does.
 ## After deploying it somewhere
 
 Add a row to [ADOPTERS.md](./ADOPTERS.md).
+
+## Authorisation and security
+
+A module exposing an endpoint must apply consistent authorisation principles:
+
+1. **Authorise at the narrowest scope the operation affects, matching permissions to effects**:
+   - `VIEW` on the target entity or containing group for read operations (e.g. `commerce-site-type`).
+   - `UPDATE` on the containing layout or entity for write operations (e.g. `fragment-override`).
+   - `Omniadmin` is reserved strictly for operations that genuinely affect the entire portal instance (e.g. `search-reindex`), and its use must be justified in the module's javadoc.
+2. **Authenticate before authorising, and separately**:
+   - Return HTTP 401 `Unauthorized` for unauthenticated or guest callers (`user == null || user.isDefaultUser()`).
+   - Return HTTP 403 `Forbidden` only for authenticated users lacking the required permission.
+   - Never collapse these into a single 403; doing so makes unauthenticated service account calls indistinguishable from permission failures.
+3. **Attribute mutations to the caller**:
+   - Any module performing writes or mutations must record the authenticated caller's identity (e.g. `user.getUserId()`) in audit logs and entity updates, never attributing changes to an entity's original creator.
+4. **Service accounts and client extensions**:
+   - Prioritise correctness over convenience: when client extensions authenticate via machine service accounts, administrators must grant those accounts scoped permissions rather than relying on blanket administrative bypasses.
+5. **Deployment healthchecks**:
+   - Lightweight status probes (e.g. `/status`) are intentionally unauthenticated, returning high-level deployment readiness without exposing sensitive metadata.
+
+<!-- markdownlint-disable MD049 -->
+---
+*Last Updated: 2026-09-04* | *Last Reviewed: 2026-09-04*
