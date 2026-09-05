@@ -154,7 +154,13 @@ jobs:
             target_file=$(basename "$target_jar")
             bundle_ver=$(unzip -p "$target_jar" META-INF/MANIFEST.MF | sed -n 's/^Bundle-Version:[[:space:]]*//p' | tr -d '\r')
             sha=$(cut -d ' ' -f 1 "dist/${target_file}.sha256")
-            entries+=("\"${bsn}\":{\"module\":\"${module}\",\"bsn\":\"${bsn}\",\"version\":\"${bundle_ver}\",\"dxpLine\":\"${{ steps.ver.outputs.dxp }}\",\"asset\":\"${target_file}\",\"sha256\":\"${sha}\"}")
+            replaces_raw=$(sed -n 's/^Replaces:[[:space:]]*//p' "$bnd" | tr -d '\r')
+            if [ -n "$replaces_raw" ]; then
+              replaces_json=$(echo "$replaces_raw" | awk -F',' '{for(i=1;i<=NF;i++){gsub(/^[ \t]+|[ \t]+$/, "", $i); printf "\"%s\"%s", $i, (i<NF?",":"")}}' | awk '{printf "[%s]", $0}')
+            else
+              replaces_json="[]"
+            fi
+            entries+=("\"${bsn}\":{\"module\":\"${module}\",\"bsn\":\"${bsn}\",\"version\":\"${bundle_ver}\",\"dxpLine\":\"${{ steps.ver.outputs.dxp }}\",\"replaces\":${replaces_json},\"asset\":\"${target_file}\",\"sha256\":\"${sha}\"}")
           done
 
           joined=$(IFS=,; echo "${entries[*]}")
@@ -165,13 +171,14 @@ jobs:
 {
   "schemaVersion": 1,
   "release": "${tag}",
-  "dxpLine": "${{ steps.ver.outputs.dxp }}",
   "bundles": {
     ${joined}
   }
 }
 EOF
-          # Format and sort keys deterministically for byte-identical reproducibility
+          # Sort keys deterministically so modules.json is byte-stable across rebuilds,
+          # allowing modules.json.sha256 to be compared meaningfully between runs.
+          # Without sorted keys, identical inputs yield arbitrary checksum churn.
           jq -S . dist/modules.json > dist/modules.json.tmp && mv dist/modules.json.tmp dist/modules.json
           # Note: modules.json.sha256 validates download/transport integrity, while
           # the inner per-bundle sha256 digests provide the verifiable asset anchors.
@@ -196,6 +203,18 @@ EOF
               echo "::error::modules.json key '$key' does not match bundle bsn '$row_bsn'"
               exit 1
             fi
+            is_array=$(jq ".bundles[\"${key}\"].replaces | type == \"array\"" dist/modules.json)
+            if [ "$is_array" != "true" ]; then
+              echo "::error::modules.json bundle '$key' replaces must be an array"
+              exit 1
+            fi
+            # Assert no listed BSN in replaces is also an active bundle in this release
+            for rep in $(jq -r ".bundles[\"${key}\"].replaces[]" dist/modules.json 2>/dev/null); do
+              if jq -e ".bundles[\"${rep}\"]" dist/modules.json >/dev/null 2>&1; then
+                echo "::error::bundle '$key' claims to replace '$rep', which is also an active bundle in this release"
+                exit 1
+              fi
+            done
           done
 
           for row in $(jq -r '.bundles[] | @base64' dist/modules.json); do
