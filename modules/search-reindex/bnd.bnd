@@ -1,5 +1,6 @@
 Bundle-Name: Liferay Search Reindex Endpoint
 Bundle-SymbolicName: com.liferay.custom.search.reindex
+Replaces: com.liferay.accelerator.reindex.endpoint
 
 Import-Package: \
 	com.liferay.portal.kernel.backgroundtask;version="[12.0,13.0)",\

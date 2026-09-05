@@ -242,6 +242,24 @@ distinguishable and a `.ldmp` package can record exactly which bundle it
 contains. A locally built jar is versioned `1.0.0-SNAPSHOT` and can never be
 mistaken for a released one.
 
+### Machine-readable release manifest (`modules.json`)
+
+Each release publishes a machine-readable `modules.json` asset (and `modules.json.sha256`) describing all bundles in the release:
+
+- **`schemaVersion`**: Top-level integer (`1`) indicating the schema format version.
+- **`release`**: Top-level release tag string (e.g. `v3.0.0`).
+- **`bundles`**: Dictionary keyed by `Bundle-SymbolicName` (`bsn`) for $O(1)$ lookup:
+  - `module`: Repository module directory name.
+  - `bsn`: Bundle symbolic name (immutable OSGi identity).
+  - `version`: Bundle version extracted directly from the built JAR's `META-INF/MANIFEST.MF`.
+  - `dxpLine`: Target DXP line for the bundle artifact.
+  - `replaces`: Array of superseded BSNs (e.g. `["com.liferay.fragment.override"]` or `["com.liferay.accelerator.reindex.endpoint"]`), allowing consumer deploy scripts to automatically discover and prune retired bundles. This encompasses bundles that originated outside this workspace prior to module adoption as well as workspace-internal renames.
+  - `asset`: Filename of the release JAR.
+  - `sha256`: SHA-256 digest of the release JAR.
+
+> [!NOTE]
+> **Integrity vs. Authenticity**: `modules.json.sha256` verifies download/transport integrity (detecting truncated transfers). The embedded `sha256` digests within `modules.json` serve as the verifiable asset anchors that consumers can record locally to pin bundles.
+
 ### As a Maven/Gradle dependency (authentication required)
 
 Published to GitHub Packages as `com.liferay.custom.osgi:<module>:<version>`.
@@ -319,4 +337,4 @@ spans lines.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-04* | *Last Reviewed: 2026-09-04*
+*Last Updated: 2026-09-05* | *Last Reviewed: 2026-09-05*
