@@ -95,7 +95,7 @@ jobs:
         # mismatch is visible at the point of download rather than surfacing
         # later as a resolution failure inside a portal. A checksum accompanies
         # each, matching how LDM verifies its own snapshot payloads.
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
         run: |
           mkdir -p dist
           # Match the release version explicitly rather than globbing every
@@ -245,6 +245,13 @@ jobs:
             fi
           done
           (cd dist && sha256sum -c modules.json.sha256)
+
+      - name: Archive staged assets on dry run
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-staged-dry-run
+          path: dist/
 
       - name: Attach assets to the release
         # GitHub Packages' Maven registry requires authentication even for
