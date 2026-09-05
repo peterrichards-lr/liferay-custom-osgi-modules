@@ -1,5 +1,5 @@
 Bundle-Name: fragment-override
-Bundle-SymbolicName: com.liferay.fragment.override
+Bundle-SymbolicName: com.liferay.custom.fragment.override
 Liferay-Configuration-Path: /configuration
 Import-Package:\
 	com.liferay.fragment.service;version="[16.0,17.0)",\
