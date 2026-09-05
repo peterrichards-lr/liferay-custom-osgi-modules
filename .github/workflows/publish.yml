@@ -173,19 +173,12 @@ jobs:
           tag="${{ github.event.release.tag_name }}"
           [ -n "$tag" ] || tag="v${{ steps.ver.outputs.version }}"
 
-          cat << EOF > dist/modules.json
-{
-  "schemaVersion": 1,
-  "release": "${tag}",
-  "bundles": {
-    ${joined}
-  }
-}
-EOF
-          # Sort keys deterministically so modules.json is byte-stable across rebuilds,
-          # allowing modules.json.sha256 to be compared meaningfully between runs.
-          # Without sorted keys, identical inputs yield arbitrary checksum churn.
-          jq -S . dist/modules.json > dist/modules.json.tmp && mv dist/modules.json.tmp dist/modules.json
+          # Construct manifest deterministically with sorted keys so modules.json is
+          # byte-stable across rebuilds, allowing modules.json.sha256 to be compared meaningfully.
+          jq -n -S \
+            --arg tag "$tag" \
+            --argjson bundles "{$joined}" \
+            '{schemaVersion: 1, release: $tag, bundles: $bundles}' > dist/modules.json
           # Note: modules.json.sha256 validates download/transport integrity, while
           # the inner per-bundle sha256 digests provide the verifiable asset anchors.
           (cd dist && sha256sum modules.json > modules.json.sha256)
