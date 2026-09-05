@@ -154,9 +154,11 @@ jobs:
             target_file=$(basename "$target_jar")
             bundle_ver=$(unzip -p "$target_jar" META-INF/MANIFEST.MF | sed -n 's/^Bundle-Version:[[:space:]]*//p' | tr -d '\r')
             sha=$(cut -d ' ' -f 1 "dist/${target_file}.sha256")
-            replaces_raw=$(sed -n 's/^Replaces:[[:space:]]*//p' "$bnd" | tr -d '\r')
+            replaces_raw=$(unzip -p "$target_jar" META-INF/MANIFEST.MF \
+              | tr -d '\r' | perl -0pe 's/\n //g' \
+              | sed -n 's/^Replaces:[[:space:]]*//p')
             if [ -n "$replaces_raw" ]; then
-              replaces_json=$(echo "$replaces_raw" | awk -F',' '{for(i=1;i<=NF;i++){gsub(/^[ \t]+|[ \t]+$/, "", $i); printf "\"%s\"%s", $i, (i<NF?",":"")}}' | awk '{printf "[%s]", $0}')
+              replaces_json=$(echo "$replaces_raw" | jq -c -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
             else
               replaces_json="[]"
             fi
@@ -208,14 +210,28 @@ EOF
               echo "::error::modules.json bundle '$key' replaces must be an array"
               exit 1
             fi
-            # Assert no listed BSN in replaces is also an active bundle in this release
+            # Validate BSN grammar and assert no collision with active bundles in this release
             for rep in $(jq -r ".bundles[\"${key}\"].replaces[]" dist/modules.json 2>/dev/null); do
+              if ! echo "$rep" | grep -qE '^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)+$'; then
+                echo "::error::replaces entry '$rep' on bundle '$key' is not a valid Bundle-SymbolicName"
+                exit 1
+              fi
               if jq -e ".bundles[\"${rep}\"]" dist/modules.json >/dev/null 2>&1; then
                 echo "::error::bundle '$key' claims to replace '$rep', which is also an active bundle in this release"
                 exit 1
               fi
             done
           done
+
+          # Assert no two bundles claim to replace the same predecessor BSN
+          all_replaces=$(jq -r '.bundles[].replaces[]' dist/modules.json 2>/dev/null)
+          if [ -n "$all_replaces" ]; then
+            duplicates=$(echo "$all_replaces" | sort | uniq -d)
+            if [ -n "$duplicates" ]; then
+              echo "::error::duplicate replaces entries detected across bundles: $duplicates"
+              exit 1
+            fi
+          fi
 
           for row in $(jq -r '.bundles[] | @base64' dist/modules.json); do
             _jq() { echo "$row" | base64 --decode | jq -r "$1"; }

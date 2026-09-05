@@ -253,7 +253,7 @@ Each release publishes a machine-readable `modules.json` asset (and `modules.jso
   - `bsn`: Bundle symbolic name (immutable OSGi identity).
   - `version`: Bundle version extracted directly from the built JAR's `META-INF/MANIFEST.MF`.
   - `dxpLine`: Target DXP line for the bundle artifact.
-  - `replaces`: Array of superseded BSNs (e.g. `["com.liferay.fragment.override"]`), allowing consumer deploy scripts to automatically discover and prune retired bundles.
+  - `replaces`: Array of superseded BSNs (e.g. `["com.liferay.fragment.override"]` or `["com.liferay.accelerator.reindex.endpoint"]`), allowing consumer deploy scripts to automatically discover and prune retired bundles. This encompasses bundles that originated outside this workspace prior to module adoption as well as workspace-internal renames.
   - `asset`: Filename of the release JAR.
   - `sha256`: SHA-256 digest of the release JAR.
 
