@@ -34,6 +34,7 @@ what — add yourself there when you consume or contribute one.
 | [`fragment-override`](#fragment-override) | **in development** | Headless API rejects specification updates on published site initializer pages |
 | [`search-reindex`](#search-reindex) | **available** | Triggers asynchronous search reindexing for arbitrary entity classes without a published Headless or GraphQL mutation |
 | [`commerce-site-type`](#commerce-site-type) | **available** | Exposes a commerce channel's B2B/B2C/B2X site type and allowed account types |
+| [`client-extension-entry`](#client-extension-entry) | **available** | Exposes the portlet id Liferay composes for a client extension, which no Liferay API publishes |
 
 ### fragment-override
 
@@ -198,12 +199,212 @@ several lines is plausible — but that is a hypothesis about this import set, n
 tested claim, and per the resolution above it is a property of the imports rather
 than of the repository.
 
+### client-extension-entry
+
+Exposes the **portlet id** Liferay composes for a client extension, together
+with the entry metadata a configuration panel needs.
+
+A link into a client extension's configuration screen in the Control Panel needs
+that portlet id, and it is not published anywhere a caller outside the portal JVM
+can read it. What was ruled out first:
+
+- GraphQL's `ClientExtension` type carries only `clientExtensionConfig` and
+  `externalReferenceCode`. No id, and no top-level query for entries.
+- No headless REST API covers client extension entries.
+- The portlet id is not stored at all. It is assembled at deploy time by
+  `CETDeployerImpl`, so there is no row to read even with database access.
+
+Inside OSGi it is a short method call, which is what this module wraps.
+
+#### Endpoints
+
+```
+GET /o/client-extension-entry/entries/{externalReferenceCode}
+GET /o/client-extension-entry/entries?keywords=&type=&page=1&pageSize=100
+GET /o/client-extension-entry/status
+```
+
+A single entry returns:
+
+```json
+{
+  "externalReferenceCode": "LXC:liferay-ai-commerce-accelerator-configuration",
+  "requestedExternalReferenceCode": "liferay-ai-commerce-accelerator-configuration",
+  "companyId": 99367122642203,
+  "entryId": null,
+  "sourceType": "CONFIGURATION",
+  "name": "AICA Configuration",
+  "description": "",
+  "type": "customElement",
+  "status": 0,
+  "statusLabel": "approved",
+  "sourceCodeURL": "",
+  "baseURL": "http://localhost:3000",
+  "hasPortlet": true,
+  "portletId": "com_liferay_client_extension_web_internal_portlet_ClientExtensionEntryPortlet_99367122642203_LXC_liferay_ai_commerce_accelerator_configuration",
+  "instanceable": true,
+  "friendlyURLMapping": "aica-configuration"
+}
+```
+
+The list variant wraps the same objects in
+`{"companyId": ..., "page": ..., "pageSize": ..., "totalCount": ..., "entries": [...]}`,
+so a configuration panel can report which extensions are actually deployed
+rather than which ones it hopes are.
+
+#### The number in the portlet id is the company id, not the entry id
+
+Worth stating plainly, because it is the natural assumption and it is wrong.
+Both values are large counter-issued longs and look alike. Liferay composes the
+id as:
+
+```java
+"com_liferay_client_extension_web_internal_portlet_" +
+    "ClientExtensionEntryPortlet_" + cet.getCompanyId() + "_" +
+        CETUtil.normalizeExternalReferenceCodeForPortletId(
+            cet.getExternalReferenceCode())
+```
+
+Verified by decompiling `com.liferay.client.extension.web 1.0.94`, the artifact
+the pinned `dxp-2026.q1.12-lts` ships, rather than from `master` alone. The
+company id segment was introduced by `client-extension-web` upgrade step
+`v3_0_1` (`UpgradePortletId`), which renamed `prefix + externalReferenceCode` to
+`prefix + companyId + "_" + externalReferenceCode`.
+
+The practical consequence is the same either way — a hardcoded portlet id breaks
+on every fresh database, because the company id differs — but the diagnosis
+matters when reading a portlet id by eye.
+
+`CETUtil.normalizeExternalReferenceCodeForPortletId` is a bare
+`replaceAll("\\W", "_")`. An `LXC_` prefix therefore comes from the deployed
+external reference code itself, not from prefixing performed by Liferay or by
+this module. The module calls Liferay's helper rather than reproducing it.
+
+Only `customElement` and `iframe` extensions register a portlet — those are the
+two branches of `CETDeployerImpl#deploy` that compose an id. For every other
+type the endpoint reports `hasPortlet: false` and a null `portletId` rather than
+composing an id for a portlet that was never registered.
+
+#### Which external reference code to pass
+
+Either the id declared in `client-extension.yaml`, or the prefixed form Liferay
+holds. Both resolve, and the response reports which one matched:
+
+- `externalReferenceCode` — the code Liferay holds
+- `requestedExternalReferenceCode` — the code the caller passed
+
+The two differ for a workspace-deployed extension.
+`CETConfigurationFactory#_getExternalReferenceCode` returns
+`"LXC:" + <id declared in client-extension.yaml>`, so
+`liferay-ai-commerce-accelerator-configuration` is held as
+`LXC:liferay-ai-commerce-accelerator-configuration`. Because
+`normalizeExternalReferenceCodeForPortletId` replaces every non-word character,
+the **colon** becomes the underscore seen in the portlet id:
+`LXC_liferay_ai_commerce_accelerator_configuration`. There is no literal
+`LXC_`-prefixed string stored anywhere, which is why searching for one finds
+nothing.
+
+An entry created through Client Extension Admin keeps the plain code, with no
+prefix — which is why database-backed and configuration-backed extensions in the
+same instance look inconsistent.
+
+Requiring a caller to know that convention would put back a smaller version of
+the guesswork this module exists to remove, so the endpoint accepts both. One
+caveat for anyone reading the log: `CETManagerImpl#getCET` emits a WARN for a
+code it cannot find, so the form that misses leaves a line behind even when the
+other form succeeds.
+
+#### `sourceType`, and why `CETManager` rather than the local service
+
+- **`DATABASE`**: the extension has a `ClientExtensionEntry` row, created
+  through Client Extension Admin. `entryId` is populated.
+- **`CONFIGURATION`**: the extension was deployed as a workspace `.zip` and
+  exists as OSGi configuration, with no database row. `entryId` is `null`.
+
+Entries are resolved through `CETManager`, not
+`ClientExtensionEntryLocalService`. The local service sees only the first kind,
+so on its own it returns null for exactly the deployment style that most needs
+this endpoint. `CETManager.getCET` consults the database first and the
+configuration map second, covering both; the local service is still consulted,
+but only to report `entryId` and to distinguish `sourceType`.
+
+#### Status healthcheck
+
+```
+GET /o/client-extension-entry/status
+```
+
+Intentionally unauthenticated, as a lightweight deployment readiness probe.
+
+#### Security & permissions
+
+- **Authentication**: unauthenticated / guest requests return HTTP 401
+  `Unauthorized`.
+- **Authorisation**: callers require one of
+
+  1. omniadmin;
+  2. company admin;
+  3. `ACCESS_IN_CONTROL_PANEL` on
+     `com_liferay_client_extension_web_internal_portlet_ClientExtensionAdminPortlet`;
+  4. `VIEW` on the `ClientExtensionEntry` model — what Liferay's own
+     `ClientExtensionEntryServiceImpl` checks for a read, available only for a
+     database-backed entry, since a model resource permission needs a primary
+     key.
+
+  Unauthorised callers return HTTP 403 `Forbidden`.
+
+  **Rung 3 is the one to grant a service account.** It is the only rung that
+  covers a configuration-backed extension, which has no model resource to hold a
+  permission. Grant it in Control Panel → Roles → *[the account's role]* →
+  Define Permissions → Control Panel → Client Extensions → Access in Control
+  Panel.
+
+  Note what is deliberately *not* in that list: `VIEW` on the
+  `com.liferay.client.extension` portlet resource. Its
+  `resource-actions/default.xml` supports only `ADD_ENTRY` and `PERMISSIONS`, so
+  `VIEW` is not an action an administrator can grant against it — checking it
+  would be unreachable code rather than a permission.
+- **Authorisation runs before resolution**, so an unauthorised caller cannot use
+  the difference between 403 and 404 to discover which external reference codes
+  exist.
+- **OAuth scope**: `Custom.Client.Extension.Entry.everything.read`, derived from
+  `osgi.jaxrs.name`. Deploying the bundle is not sufficient — a service account
+  or client extension must be granted the scope explicitly in its
+  `client-extension.yaml`.
+- **Telling the two 403s apart**, since they need different remedies:
+  - **empty body** — Liferay's access control rejected the call before it
+    reached the module. The OAuth scope is missing.
+  - **JSON body with `"error": "Forbidden"`** — the module rejected the call.
+    The caller is authenticated and in scope but holds none of the four
+    permissions above; a matching WARN naming the user id is in the log.
+- **Unknown external reference code** returns HTTP 404 `NotFound`, never a
+  `NullPointerException`.
+
+#### Liferay versions
+
+Compiled against `dxp-2026.q1.12-lts`, the workspace pin.
+
+Unlike `commerce-site-type`, this module cannot be kernel-only: the client
+extension registry has no kernel-facing API, so it imports
+`com.liferay.client.extension.{constants, model, service, type, type.manager,
+util}` alongside the kernel packages and `com.liferay.portal.vulcan.pagination`.
+Those application packages change major more readily than kernel ones, so this
+is expected to be a **per-DXP-line artifact** — see the resolution below.
+
+**Runtime verification is outstanding.** The 22 unit tests exercise the
+composition, source-type and authorisation logic with mocks; they do not
+exercise OSGi wiring. Deploying to a `2026.q1.12-lts` instance and confirming
+that the bundle resolves, that `/o/client-extension-entry/status` answers, and
+that the returned `portletId` matches the one Liferay registered, is what would
+settle it.
+
 ## Building
 
 ```bash
 ./gradlew :modules:fragment-override:build
 ./gradlew :modules:search-reindex:build
 ./gradlew :modules:commerce-site-type:build
+./gradlew :modules:client-extension-entry:build
 ```
 
 The JAR lands in `modules/<module-name>/build/libs/`.
@@ -337,4 +538,4 @@ spans lines.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-05* | *Last Reviewed: 2026-09-05*
+*Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*
