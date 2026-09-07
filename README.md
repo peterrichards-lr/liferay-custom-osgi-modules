@@ -228,7 +228,8 @@ A single entry returns:
 
 ```json
 {
-  "externalReferenceCode": "LXC_liferay-ai-commerce-accelerator-configuration",
+  "externalReferenceCode": "LXC:liferay-ai-commerce-accelerator-configuration",
+  "requestedExternalReferenceCode": "liferay-ai-commerce-accelerator-configuration",
   "companyId": 99367122642203,
   "entryId": null,
   "sourceType": "CONFIGURATION",
@@ -284,6 +285,35 @@ two branches of `CETDeployerImpl#deploy` that compose an id. For every other
 type the endpoint reports `hasPortlet: false` and a null `portletId` rather than
 composing an id for a portlet that was never registered.
 
+#### Which external reference code to pass
+
+Either the id declared in `client-extension.yaml`, or the prefixed form Liferay
+holds. Both resolve, and the response reports which one matched:
+
+- `externalReferenceCode` — the code Liferay holds
+- `requestedExternalReferenceCode` — the code the caller passed
+
+The two differ for a workspace-deployed extension.
+`CETConfigurationFactory#_getExternalReferenceCode` returns
+`"LXC:" + <id declared in client-extension.yaml>`, so
+`liferay-ai-commerce-accelerator-configuration` is held as
+`LXC:liferay-ai-commerce-accelerator-configuration`. Because
+`normalizeExternalReferenceCodeForPortletId` replaces every non-word character,
+the **colon** becomes the underscore seen in the portlet id:
+`LXC_liferay_ai_commerce_accelerator_configuration`. There is no literal
+`LXC_`-prefixed string stored anywhere, which is why searching for one finds
+nothing.
+
+An entry created through Client Extension Admin keeps the plain code, with no
+prefix — which is why database-backed and configuration-backed extensions in the
+same instance look inconsistent.
+
+Requiring a caller to know that convention would put back a smaller version of
+the guesswork this module exists to remove, so the endpoint accepts both. One
+caveat for anyone reading the log: `CETManagerImpl#getCET` emits a WARN for a
+code it cannot find, so the form that misses leaves a line behind even when the
+other form succeeds.
+
 #### `sourceType`, and why `CETManager` rather than the local service
 
 - **`DATABASE`**: the extension has a `ClientExtensionEntry` row, created
@@ -310,19 +340,43 @@ Intentionally unauthenticated, as a lightweight deployment readiness probe.
 
 - **Authentication**: unauthenticated / guest requests return HTTP 401
   `Unauthorized`.
-- **Authorisation**: callers require omniadmin, company admin, `VIEW` on the
-  `com.liferay.client.extension` portlet resource, or `VIEW` on the
-  `ClientExtensionEntry` model when the extension is database-backed. That
-  mirrors what Liferay's own `ClientExtensionEntryServiceImpl` enforces for a
-  read. Unauthorised callers return HTTP 403 `Forbidden`.
+- **Authorisation**: callers require one of
+
+  1. omniadmin;
+  2. company admin;
+  3. `ACCESS_IN_CONTROL_PANEL` on
+     `com_liferay_client_extension_web_internal_portlet_ClientExtensionAdminPortlet`;
+  4. `VIEW` on the `ClientExtensionEntry` model — what Liferay's own
+     `ClientExtensionEntryServiceImpl` checks for a read, available only for a
+     database-backed entry, since a model resource permission needs a primary
+     key.
+
+  Unauthorised callers return HTTP 403 `Forbidden`.
+
+  **Rung 3 is the one to grant a service account.** It is the only rung that
+  covers a configuration-backed extension, which has no model resource to hold a
+  permission. Grant it in Control Panel → Roles → *[the account's role]* →
+  Define Permissions → Control Panel → Client Extensions → Access in Control
+  Panel.
+
+  Note what is deliberately *not* in that list: `VIEW` on the
+  `com.liferay.client.extension` portlet resource. Its
+  `resource-actions/default.xml` supports only `ADD_ENTRY` and `PERMISSIONS`, so
+  `VIEW` is not an action an administrator can grant against it — checking it
+  would be unreachable code rather than a permission.
 - **Authorisation runs before resolution**, so an unauthorised caller cannot use
   the difference between 403 and 404 to discover which external reference codes
   exist.
 - **OAuth scope**: `Custom.Client.Extension.Entry.everything.read`, derived from
   `osgi.jaxrs.name`. Deploying the bundle is not sufficient — a service account
   or client extension must be granted the scope explicitly in its
-  `client-extension.yaml`. A missing grant presents as HTTP 403 with an empty
-  body, which reads like a broken module rather than a missing grant.
+  `client-extension.yaml`.
+- **Telling the two 403s apart**, since they need different remedies:
+  - **empty body** — Liferay's access control rejected the call before it
+    reached the module. The OAuth scope is missing.
+  - **JSON body with `"error": "Forbidden"`** — the module rejected the call.
+    The caller is authenticated and in scope but holds none of the four
+    permissions above; a matching WARN naming the user id is in the log.
 - **Unknown external reference code** returns HTTP 404 `NotFound`, never a
   `NullPointerException`.
 
@@ -337,7 +391,7 @@ util}` alongside the kernel packages and `com.liferay.portal.vulcan.pagination`.
 Those application packages change major more readily than kernel ones, so this
 is expected to be a **per-DXP-line artifact** — see the resolution below.
 
-**Runtime verification is outstanding.** The 18 unit tests exercise the
+**Runtime verification is outstanding.** The 22 unit tests exercise the
 composition, source-type and authorisation logic with mocks; they do not
 exercise OSGi wiring. Deploying to a `2026.q1.12-lts` instance and confirming
 that the bundle resolves, that `/o/client-extension-entry/status` answers, and

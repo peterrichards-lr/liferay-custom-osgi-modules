@@ -185,8 +185,15 @@ public class ClientExtensionEntryResourceTest {
 			response.getEntity().toString().contains("\"error\":\"NotFound\""));
 	}
 
+	/**
+	 * The only rung that covers a configuration-backed extension, which has no
+	 * model resource to hold a permission. VIEW on the
+	 * <code>com.liferay.client.extension</code> portlet resource cannot serve
+	 * here: that resource declares only ADD_ENTRY and PERMISSIONS, so VIEW is
+	 * not a grant an administrator can make.
+	 */
 	@Test
-	public void testGetEntry_PortletResourceViewPermission_Succeeds()
+	public void testGetEntry_ControlPanelAccessPermission_Succeeds()
 		throws Exception {
 
 		_setUpAuthenticatedUser();
@@ -196,10 +203,10 @@ public class ClientExtensionEntryResourceTest {
 
 		Mockito.when(
 			permissionChecker.hasPermission(
-				0L, "com.liferay.client.extension", _COMPANY_ID,
-				ActionKeys.VIEW)).thenReturn(true);
+				(Group)null, _ADMIN_PORTLET_ID, _ADMIN_PORTLET_ID,
+				ActionKeys.ACCESS_IN_CONTROL_PANEL)).thenReturn(true);
 
-		CustomElementCET customElementCET = _customElementCET(_ERC, false);
+		CustomElementCET customElementCET = _customElementCET(_ERC, true);
 
 		Mockito.when(_cetManager.getCET(_COMPANY_ID, _ERC)).thenReturn(
 			customElementCET);
@@ -272,6 +279,115 @@ public class ClientExtensionEntryResourceTest {
 			json, json.contains("ClientExtensionEntryPortlet_" + _ENTRY_ID));
 		Assert.assertTrue(json.contains("\"companyId\":" + _COMPANY_ID));
 		Assert.assertTrue(json.contains("\"hasPortlet\":true"));
+	}
+
+	/**
+	 * A consumer knows the id it wrote in client-extension.yaml and nothing
+	 * else. Passing that id must work even though Liferay holds the
+	 * "LXC:"-prefixed form, and the response must say which code matched so the
+	 * caller can tell what it got.
+	 */
+	@Test
+	public void testGetEntry_DeclaredCode_ResolvesToPrefixedCode()
+		throws Exception {
+
+		_setUpOmniadmin();
+
+		CustomElementCET customElementCET = _customElementCET(_ERC, true);
+
+		Mockito.when(_cetManager.getCET(_COMPANY_ID, _DECLARED_ERC)).thenReturn(
+			null);
+		Mockito.when(_cetManager.getCET(_COMPANY_ID, _ERC)).thenReturn(
+			customElementCET);
+
+		Response response = _resource.getEntry(
+			_httpServletRequest, _DECLARED_ERC);
+
+		Assert.assertEquals(
+			Response.Status.OK.getStatusCode(), response.getStatus());
+
+		String json = response.getEntity().toString();
+
+		Assert.assertTrue(
+			json, json.contains("\"externalReferenceCode\":\"" + _ERC + "\""));
+		Assert.assertTrue(
+			json,
+			json.contains(
+				"\"requestedExternalReferenceCode\":\"" + _DECLARED_ERC +
+					"\""));
+		Assert.assertTrue(
+			json,
+			json.contains(
+				"ClientExtensionEntryPortlet_99367122642203_LXC_liferay_ai_" +
+					"commerce_accelerator_configuration"));
+	}
+
+	/**
+	 * An already-prefixed code must not be prefixed twice.
+	 */
+	@Test
+	public void testGetEntry_PrefixedCode_IsNotPrefixedAgain()
+		throws Exception {
+
+		_setUpOmniadmin();
+
+		CustomElementCET customElementCET = _customElementCET(_ERC, true);
+
+		Mockito.when(_cetManager.getCET(_COMPANY_ID, _ERC)).thenReturn(
+			customElementCET);
+
+		Response response = _resource.getEntry(_httpServletRequest, _ERC);
+
+		Assert.assertEquals(
+			Response.Status.OK.getStatusCode(), response.getStatus());
+
+		Mockito.verify(
+			_cetManager, Mockito.never()
+		).getCET(
+			_COMPANY_ID, "LXC:" + _ERC
+		);
+	}
+
+	@Test
+	public void testGetEntry_UnknownCode_TriesBothForms() throws Exception {
+		_setUpOmniadmin();
+
+		Mockito.when(
+			_cetManager.getCET(Mockito.anyLong(), Mockito.anyString())
+		).thenReturn(
+			null
+		);
+
+		Response response = _resource.getEntry(_httpServletRequest, "nope");
+
+		Assert.assertEquals(
+			Response.Status.NOT_FOUND.getStatusCode(), response.getStatus());
+
+		Mockito.verify(_cetManager).getCET(_COMPANY_ID, "nope");
+		Mockito.verify(_cetManager).getCET(_COMPANY_ID, "LXC:nope");
+	}
+
+	/**
+	 * A 403 from this resource always carries a body. An empty-bodied 403 comes
+	 * from Liferay's access control for a missing OAuth scope, and the two need
+	 * different remedies, so the distinction has to survive.
+	 */
+	@Test
+	public void testGetEntry_Forbidden_CarriesADiagnosableBody()
+		throws Exception {
+
+		_setUpAuthenticatedUser();
+		_setUpPermissionChecker(false, false, false);
+
+		Response response = _resource.getEntry(_httpServletRequest, _ERC);
+
+		Assert.assertEquals(
+			Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
+
+		String json = response.getEntity().toString();
+
+		Assert.assertTrue(json, json.contains("ACCESS_IN_CONTROL_PANEL"));
+		Assert.assertTrue(json, json.contains("OAuth scope"));
 	}
 
 	@Test
@@ -638,18 +754,34 @@ public class ClientExtensionEntryResourceTest {
 				Mockito.nullable(Group.class), Mockito.anyString(),
 				Mockito.anyLong(), Mockito.anyString())).thenReturn(
 					anyPermission);
+		Mockito.when(
+			permissionChecker.hasPermission(
+				Mockito.nullable(Group.class), Mockito.anyString(),
+				Mockito.anyString(), Mockito.anyString())).thenReturn(
+					anyPermission);
 
 		PermissionThreadLocal.setPermissionChecker(permissionChecker);
 
 		return permissionChecker;
 	}
 
+	private static final String _ADMIN_PORTLET_ID =
+		"com_liferay_client_extension_web_internal_portlet_" +
+			"ClientExtensionAdminPortlet";
+
 	private static final long _COMPANY_ID = 99367122642203L;
 
 	private static final long _ENTRY_ID = 30394841094851L;
 
-	private static final String _ERC =
-		"LXC_liferay-ai-commerce-accelerator-configuration";
+	private static final String _DECLARED_ERC =
+		"liferay-ai-commerce-accelerator-configuration";
+
+	/**
+	 * The code Liferay actually holds for a workspace-deployed extension:
+	 * CETConfigurationFactory prepends "LXC:" to the id declared in
+	 * client-extension.yaml.
+	 */
+	private static final String _ERC = "LXC:" + _DECLARED_ERC;
 
 	private CETManager _cetManager;
 	private ClientExtensionEntryLocalService _clientExtensionEntryLocalService;

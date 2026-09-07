@@ -114,13 +114,20 @@ import jakarta.ws.rs.core.Response;
  * </p>
  *
  * <p>
+ * A caller passes the id it declared in <code>client-extension.yaml</code>, or
+ * the <code>LXC:</code>-prefixed form Liferay holds for a workspace-deployed
+ * extension; both are accepted and the response reports which one matched. See
+ * {@link #_resolveCET}.
+ * </p>
+ *
+ * <p>
  * Authorisation follows this workspace's rule of matching permissions to
- * effects. These are reads of a company-scoped administrative object, so a
- * caller needs omniadmin, company admin, VIEW on the
- * <code>ClientExtensionEntry</code> model when the entry is database-backed, or
- * VIEW on the <code>com.liferay.client.extension</code> portlet resource. That
- * mirrors what Liferay's own <code>ClientExtensionEntryServiceImpl</code>
- * enforces for a read.
+ * effects — reads of a company-scoped administrative object — but the obvious
+ * check is not available: the <code>com.liferay.client.extension</code> portlet
+ * resource supports only <code>ADD_ENTRY</code> and <code>PERMISSIONS</code> in
+ * its <code>resource-actions/default.xml</code>, so it has no
+ * <code>VIEW</code> action for an administrator to grant. See
+ * {@link #_checkAuthorization} for the ladder that is actually grantable.
  * </p>
  */
 public class ClientExtensionEntryResource {
@@ -173,21 +180,24 @@ public class ClientExtensionEntryResource {
 
 			long companyId = PortalUtil.getCompanyId(httpServletRequest);
 
-			ClientExtensionEntry clientExtensionEntry =
-				_fetchClientExtensionEntry(externalReferenceCode, companyId);
+			CET cet = _resolveCET(companyId, externalReferenceCode);
 
-			// Authorise before resolving the extension, so that a caller
-			// without permission cannot use the difference between 403 and 404
-			// to discover which external reference codes exist.
+			ClientExtensionEntry clientExtensionEntry =
+				_fetchClientExtensionEntry(
+					(cet == null) ? externalReferenceCode :
+						cet.getExternalReferenceCode(),
+					companyId);
+
+			// Authorise before reporting whether the extension exists, so that
+			// a caller without permission cannot use the difference between
+			// 403 and 404 to discover which external reference codes exist.
 
 			Response authorizationResponse = _checkAuthorization(
-				companyId, clientExtensionEntry);
+				httpServletRequest, companyId, clientExtensionEntry);
 
 			if (authorizationResponse != null) {
 				return authorizationResponse;
 			}
-
-			CET cet = _cetManager.getCET(companyId, externalReferenceCode);
 
 			// A missing external reference code is a 404, never a thrown
 			// NullPointerException. Commerce #649 is open against exactly that
@@ -197,12 +207,17 @@ public class ClientExtensionEntryResource {
 				return _jsonError(
 					Response.Status.NOT_FOUND, "NotFound",
 					"No client extension entry found for external reference " +
-						"code " + externalReferenceCode + ".");
+						"code " + externalReferenceCode + ". A client " +
+							"extension deployed from a workspace is held " +
+								"under \"" + _CONFIGURATION_ERC_PREFIX +
+									"\" plus the id declared in " +
+										"client-extension.yaml; both forms " +
+											"were tried.");
 			}
 
 			return Response.ok(
 				_toJSONObject(
-					cet, clientExtensionEntry
+					cet, clientExtensionEntry, externalReferenceCode
 				).toString(),
 				MediaType.APPLICATION_JSON
 			).build();
@@ -257,7 +272,7 @@ public class ClientExtensionEntryResource {
 			// on. Authorise once, at the company scope the listing covers.
 
 			Response authorizationResponse = _checkAuthorization(
-				companyId, null);
+				httpServletRequest, companyId, null);
 
 			if (authorizationResponse != null) {
 				return authorizationResponse;
@@ -273,7 +288,8 @@ public class ClientExtensionEntryResource {
 					_toJSONObject(
 						cet,
 						_fetchClientExtensionEntry(
-							cet.getExternalReferenceCode(), companyId)));
+							cet.getExternalReferenceCode(), companyId),
+						null));
 			}
 
 			JSONObject responseJSONObject = JSONFactoryUtil.createJSONObject();
@@ -316,26 +332,56 @@ public class ClientExtensionEntryResource {
 		return null;
 	}
 
+	/**
+	 * The authorisation ladder. Each rung is a grant that can actually be made
+	 * in the portal, which is worth stating because the obvious rung cannot be:
+	 * <code>com.liferay.client.extension</code> is a portlet resource whose
+	 * <code>resource-actions/default.xml</code> supports only
+	 * <code>ADD_ENTRY</code> and <code>PERMISSIONS</code>. It has no
+	 * <code>VIEW</code> action, so checking VIEW against it is unreachable code
+	 * rather than a permission an administrator could grant.
+	 *
+	 * <p>
+	 * The rungs are therefore:
+	 * </p>
+	 *
+	 * <ul>
+	 * <li>omniadmin;</li>
+	 * <li>company admin;</li>
+	 * <li><code>ACCESS_IN_CONTROL_PANEL</code> on the Client Extensions admin
+	 * portlet — "may see client extension administration", grantable through
+	 * Roles and the only rung that covers a configuration-backed extension,
+	 * which has no model resource to hold a permission;</li>
+	 * <li><code>VIEW</code> on the <code>ClientExtensionEntry</code> model,
+	 * which is what Liferay's own <code>ClientExtensionEntryServiceImpl</code>
+	 * checks for a read. Available only for a database-backed entry, since a
+	 * model resource permission needs a primary key.</li>
+	 * </ul>
+	 */
 	private Response _checkAuthorization(
-		long companyId, ClientExtensionEntry clientExtensionEntry) {
+		HttpServletRequest httpServletRequest, long companyId,
+		ClientExtensionEntry clientExtensionEntry) {
 
 		PermissionChecker permissionChecker =
 			PermissionThreadLocal.getPermissionChecker();
 
 		if (permissionChecker != null) {
 			if (permissionChecker.isOmniadmin() ||
-				permissionChecker.isCompanyAdmin(companyId) ||
-				permissionChecker.hasPermission(
-					0L, ClientExtensionConstants.RESOURCE_NAME, companyId,
-					ActionKeys.VIEW)) {
+				permissionChecker.isCompanyAdmin(companyId)) {
 
 				return null;
 			}
 
-			// Liferay's own ClientExtensionEntryModelResourcePermission checks
-			// VIEW with a null Group, the entry id as the primary key. Only a
-			// database-backed entry has one; a configuration-backed extension
-			// is covered by the portlet resource check above.
+			if (permissionChecker.hasPermission(
+					(Group)null, _CLIENT_EXTENSION_ADMIN_PORTLET_ID,
+					_CLIENT_EXTENSION_ADMIN_PORTLET_ID,
+					ActionKeys.ACCESS_IN_CONTROL_PANEL)) {
+
+				return null;
+			}
+
+			// Liferay's ClientExtensionEntryModelResourcePermission checks VIEW
+			// with a null Group and the entry id as the primary key.
 
 			if ((clientExtensionEntry != null) &&
 				permissionChecker.hasPermission(
@@ -347,10 +393,87 @@ public class ClientExtensionEntryResource {
 			}
 		}
 
+		// Logged at WARN because the alternative -- a bare 403 -- is hard to
+		// tell apart from the empty-bodied 403 Liferay returns for a missing
+		// OAuth scope, and the two need different remedies.
+
+		if (_log.isWarnEnabled()) {
+			_log.warn(
+				"Denying client extension entry access to user " +
+					_getUserId(httpServletRequest) + " in company " +
+						companyId + ": not an omniadmin or company admin, no " +
+							"ACCESS_IN_CONTROL_PANEL on " +
+								_CLIENT_EXTENSION_ADMIN_PORTLET_ID +
+									", and no VIEW on the ClientExtensionEntry" +
+										" model");
+		}
+
 		return _jsonError(
 			Response.Status.FORBIDDEN, "Forbidden",
-			"Omniadmin, company admin, or VIEW permission on the client " +
-				"extension is required to access client extension entries.");
+			"Access requires omniadmin, company admin, " +
+				"ACCESS_IN_CONTROL_PANEL on " +
+					_CLIENT_EXTENSION_ADMIN_PORTLET_ID + ", or VIEW on the " +
+						"ClientExtensionEntry model. This response carries a " +
+							"body; an empty-bodied 403 instead indicates a " +
+								"missing OAuth scope grant.");
+	}
+
+	/**
+	 * Resolves the code a caller can actually hold onto.
+	 *
+	 * <p>
+	 * A consumer knows the id it declared in <code>client-extension.yaml</code>
+	 * and nothing else. Liferay stores that id verbatim only for an entry
+	 * created through Client Extension Admin. For a workspace-deployed
+	 * extension, <code>CETConfigurationFactory#_getExternalReferenceCode</code>
+	 * prepends <code>LXC:</code>, so the declared
+	 * <code>liferay-ai-commerce-accelerator-configuration</code> is held as
+	 * <code>LXC:liferay-ai-commerce-accelerator-configuration</code> — and,
+	 * once every non-word character becomes an underscore, appears in the
+	 * portlet id as <code>LXC_liferay_ai_commerce_accelerator_configuration</code>.
+	 * The colon, not a literal underscore, is where that prefix comes from.
+	 * </p>
+	 *
+	 * <p>
+	 * Requiring callers to know that convention would put back a smaller
+	 * version of the guesswork this module removes, so both forms are accepted
+	 * and the response reports which one matched.
+	 * </p>
+	 *
+	 * <p>
+	 * Note for anyone reading the log: <code>CETManagerImpl#getCET</code> emits
+	 * a WARN for a code it cannot find, so the form that misses leaves a line
+	 * behind even when the other form succeeds.
+	 * </p>
+	 */
+	private CET _resolveCET(long companyId, String externalReferenceCode) {
+		CET cet = _cetManager.getCET(companyId, externalReferenceCode);
+
+		if ((cet != null) ||
+			externalReferenceCode.startsWith(_CONFIGURATION_ERC_PREFIX)) {
+
+			return cet;
+		}
+
+		return _cetManager.getCET(
+			companyId, _CONFIGURATION_ERC_PREFIX + externalReferenceCode);
+	}
+
+	private long _getUserId(HttpServletRequest httpServletRequest) {
+		try {
+			User user = PortalUtil.getUser(httpServletRequest);
+
+			if (user != null) {
+				return user.getUserId();
+			}
+		}
+		catch (Exception exception) {
+			if (_log.isDebugEnabled()) {
+				_log.debug("Unable to resolve the caller", exception);
+			}
+		}
+
+		return 0;
 	}
 
 	private ClientExtensionEntry _fetchClientExtensionEntry(
@@ -436,12 +559,28 @@ public class ClientExtensionEntryResource {
 		).build();
 	}
 
+	/**
+	 * @param requestedExternalReferenceCode the code the caller asked for, or
+	 *        <code>null</code> when the entry came from a listing rather than a
+	 *        lookup
+	 */
 	private JSONObject _toJSONObject(
-		CET cet, ClientExtensionEntry clientExtensionEntry) {
+		CET cet, ClientExtensionEntry clientExtensionEntry,
+		String requestedExternalReferenceCode) {
 
 		JSONObject jsonObject = JSONFactoryUtil.createJSONObject();
 
+		// externalReferenceCode is the code Liferay holds, which is not always
+		// the code the caller passed; see _resolveCET.
+
 		jsonObject.put("externalReferenceCode", cet.getExternalReferenceCode());
+
+		if (requestedExternalReferenceCode != null) {
+			jsonObject.put(
+				"requestedExternalReferenceCode",
+				requestedExternalReferenceCode);
+		}
+
 		jsonObject.put("companyId", cet.getCompanyId());
 
 		// entryId is reported because it is asked for, and null whenever the
@@ -479,6 +618,12 @@ public class ClientExtensionEntryResource {
 
 		return jsonObject;
 	}
+
+	private static final String _CLIENT_EXTENSION_ADMIN_PORTLET_ID =
+		"com_liferay_client_extension_web_internal_portlet_" +
+			"ClientExtensionAdminPortlet";
+
+	private static final String _CONFIGURATION_ERC_PREFIX = "LXC:";
 
 	private static final int _MAX_PAGE_SIZE = 200;
 
