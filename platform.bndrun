@@ -3,6 +3,7 @@
 -distro: ${targetPlatformDistro};x-whitelist=osgi.wiring.host
 -resolve.effective: active
 -runprovidedcapabilities:\
+	osgi.ee;osgi.ee=JavaSE;version:List<Version>='1.8,9,10,11,17,21',\
 	osgi.service;objectClass:List<String>='com.liferay.asset.kernel.service.persistence.AssetCategoryPersistence',\
 	osgi.service;objectClass:List<String>='com.liferay.frontend.js.loader.modules.extender.npm.NPMResolver',\
 	osgi.service;objectClass:List<String>='com.liferay.portal.kernel.configuration.Configuration',\

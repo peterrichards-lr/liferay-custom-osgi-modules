@@ -22,11 +22,25 @@ jobs:
       - name: Build against the pinned DXP version
         run: ./gradlew build --no-daemon
 
+      - name: Resolve every bundle against the pinned DXP distro
+        # The gate the manifest-printing step here was always meant to become.
+        # A compile proves nothing about resolution: javac never reads OSGi
+        # ranges, and bnd copies the declared Import-Package into the manifest
+        # verbatim, so a stale range builds green and fails at install. That is
+        # how v3.1.0 shipped four broken kernel ranges.
+        #
+        # `resolve` runs the real OSGi resolver against the target platform
+        # distro named by liferay.workspace.product, so a range that no longer
+        # matches what the line exports fails here with the same message the
+        # portal would give -- offline, in seconds. It downloads the distro, so
+        # this is the slow step in the job.
+        #
+        # Scope: this checks the ranges against the line we TARGET. It cannot
+        # catch an artifact built for one line reaching a portal on another --
+        # that is what the consumer-side line assertions are for.
+        run: ./gradlew resolve --no-daemon
+
       - name: Report what each bundle imports
-        # Not a gate yet -- it prints the manifest so the Import-Package
-        # question stays visible in every run rather than living only in the
-        # README. It becomes a gate once a module imports com.liferay.*; see
-        # the "one artifact, or one per Liferay line?" section of the README.
         run: |
           for jar in modules/*/build/libs/*.jar; do
             [ -e "$jar" ] || continue
