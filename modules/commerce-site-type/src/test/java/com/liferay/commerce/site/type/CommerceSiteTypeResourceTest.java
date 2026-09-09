@@ -2,6 +2,7 @@ package com.liferay.commerce.site.type;
 
 import com.liferay.portal.kernel.json.JSONArray;
 import com.liferay.portal.kernel.json.JSONFactory;
+import com.liferay.portal.kernel.json.JSONException;
 import com.liferay.portal.kernel.json.JSONFactoryUtil;
 import com.liferay.portal.kernel.json.JSONObject;
 import com.liferay.portal.kernel.model.Group;
@@ -34,6 +35,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -52,6 +55,8 @@ public class CommerceSiteTypeResourceTest {
 		JSONFactory jsonFactory = Mockito.mock(JSONFactory.class);
 		Mockito.when(jsonFactory.createJSONObject()).thenAnswer(invocation -> _createMockJSONObject());
 		Mockito.when(jsonFactory.createJSONArray()).thenAnswer(invocation -> _createMockJSONArray());
+		Mockito.when(jsonFactory.createJSONObject(Mockito.anyString())).thenAnswer(
+			invocation -> _createParsedJSONObject(invocation.getArgument(0)));
 		new JSONFactoryUtil().setJSONFactory(jsonFactory);
 
 		_portal = Mockito.mock(Portal.class);
@@ -283,6 +288,184 @@ public class CommerceSiteTypeResourceTest {
 		Assert.assertTrue(json.contains("\"configured\":true"));
 	}
 
+
+	@Test
+	public void testSetSiteType_InvalidChannelId_ReturnsBadRequest() {
+		Response response = _resource.setSiteType(_httpServletRequest, 0L, "{\"siteType\": 1}");
+
+		Assert.assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
+		Assert.assertTrue(response.getEntity().toString().contains("\"error\":\"BadRequest\""));
+	}
+
+	@Test
+	public void testSetSiteType_Unauthenticated_ReturnsUnauthorized() throws Exception {
+		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(null);
+
+		Response response = _resource.setSiteType(_httpServletRequest, 34562L, "{\"siteType\": 1}");
+
+		Assert.assertEquals(Response.Status.UNAUTHORIZED.getStatusCode(), response.getStatus());
+	}
+
+	@Test
+	public void testSetSiteType_EmptyBody_ReturnsBadRequest() throws Exception {
+		_setupOmniadmin();
+
+		Response nullBody = _resource.setSiteType(_httpServletRequest, 34562L, null);
+		Assert.assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), nullBody.getStatus());
+
+		Response blankBody = _resource.setSiteType(_httpServletRequest, 34562L, "   ");
+		Assert.assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), blankBody.getStatus());
+	}
+
+	@Test
+	public void testSetSiteType_UnparseableBody_ReturnsBadRequest() throws Exception {
+		_setupOmniadmin();
+
+		Response response = _resource.setSiteType(_httpServletRequest, 34562L, "not json");
+
+		Assert.assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
+		Assert.assertTrue(response.getEntity().toString().contains("not valid JSON"));
+	}
+
+	@Test
+	public void testSetSiteType_MissingSiteType_ReturnsBadRequest() throws Exception {
+		_setupOmniadmin();
+
+		Response response = _resource.setSiteType(_httpServletRequest, 34562L, "{\"other\": 1}");
+
+		Assert.assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
+		Assert.assertTrue(response.getEntity().toString().contains("must contain 'siteType'"));
+	}
+
+	@Test
+	public void testSetSiteType_OutOfRangeSiteType_ReturnsBadRequest() throws Exception {
+		_setupOmniadmin();
+
+		for (String body : new String[] {"{\"siteType\": 3}", "{\"siteType\": -1}", "{\"siteType\": \"B2B\"}"}) {
+			Response response = _resource.setSiteType(_httpServletRequest, 34562L, body);
+
+			Assert.assertEquals(
+				"body " + body, Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
+			Assert.assertTrue(
+				"body " + body,
+				response.getEntity().toString().contains("must be 0 (B2C), 1 (B2B) or 2 (B2X)"));
+		}
+	}
+
+	@Test
+	public void testSetSiteType_ChannelGroupNotFound_ReturnsNotFound() throws Exception {
+		_setupOmniadmin();
+
+		Mockito.when(_groupLocalService.fetchGroup(1001L, 12345L, 99999L)).thenReturn(null);
+
+		Response response = _resource.setSiteType(_httpServletRequest, 99999L, "{\"siteType\": 1}");
+
+		Assert.assertEquals(Response.Status.NOT_FOUND.getStatusCode(), response.getStatus());
+	}
+
+	@Test
+	public void testSetSiteType_ViewPermissionOnly_ReturnsForbidden() throws Exception {
+		_setupAuthenticatedUser();
+		_setupChannelGroupAndSettings("0", false);
+
+		// VIEW is enough to read the site type and deliberately not enough to
+		// change it.
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(false);
+		Mockito.when(permissionChecker.isCompanyAdmin(1001L)).thenReturn(false);
+		Mockito.when(permissionChecker.hasPermission(
+			34563L, "com.liferay.commerce.product.model.CommerceChannel", 34562L, ActionKeys.VIEW))
+			.thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _resource.setSiteType(_httpServletRequest, 34562L, "{\"siteType\": 1}");
+
+		Assert.assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
+		Assert.assertTrue(response.getEntity().toString().contains("UPDATE permissions are required"));
+	}
+
+	@Test
+	public void testSetSiteType_ChannelUpdatePermission_Succeeds() throws Exception {
+		_setupAuthenticatedUser();
+		TestModifiableSettings settings = _setupChannelGroupAndSettings("0", false);
+
+		PermissionChecker permissionChecker = Mockito.mock(PermissionChecker.class);
+		Mockito.when(permissionChecker.isOmniadmin()).thenReturn(false);
+		Mockito.when(permissionChecker.isCompanyAdmin(1001L)).thenReturn(false);
+		Mockito.when(permissionChecker.hasPermission(
+			34563L, "com.liferay.commerce.product.model.CommerceChannel", 34562L, ActionKeys.UPDATE))
+			.thenReturn(true);
+		PermissionThreadLocal.setPermissionChecker(permissionChecker);
+
+		Response response = _resource.setSiteType(_httpServletRequest, 34562L, "{\"siteType\": 1}");
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		Assert.assertEquals("1", settings.getValue("commerceSiteType", null));
+	}
+
+	@Test
+	public void testSetSiteType_Omniadmin_WritesValueAndReportsGroupScope() throws Exception {
+		_setupOmniadmin();
+		TestModifiableSettings settings = _setupChannelGroupAndSettings("0", false);
+
+		Response response = _resource.setSiteType(_httpServletRequest, 34562L, "{\"siteType\": 1}");
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+
+		// The value reached the store...
+		Assert.assertEquals("1", settings.getValue("commerceSiteType", null));
+
+		// ...and the response is read back from it rather than echoed, so
+		// configuredScope proves the write landed at group scope.
+		String json = response.getEntity().toString();
+
+		Assert.assertTrue(json, json.contains("\"siteType\":1"));
+		Assert.assertTrue(json, json.contains("\"siteTypeLabel\":\"B2B\""));
+		Assert.assertTrue(json, json.contains("\"siteTypeStatus\":\"CONFIGURED\""));
+		Assert.assertTrue(json, json.contains("\"configuredScope\":\"GROUP\""));
+		Assert.assertTrue(json, json.contains("\"configured\":true"));
+	}
+
+	@Test
+	public void testSetSiteType_B2X_ReportsBusinessPersonAndSupplier() throws Exception {
+		_setupOmniadmin();
+		_setupChannelGroupAndSettings("0", false);
+
+		Response response = _resource.setSiteType(_httpServletRequest, 34562L, "{\"siteType\": 2}");
+
+		String json = response.getEntity().toString();
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		Assert.assertTrue(json, json.contains("\"siteTypeLabel\":\"B2X\""));
+		Assert.assertTrue(json, json.contains("business"));
+		Assert.assertTrue(json, json.contains("person"));
+		Assert.assertTrue(json, json.contains("supplier"));
+	}
+
+	/**
+	 * The failure mode issue #30 asks to be ruled out. If the write does not
+	 * take, the endpoint must not claim it did: the response is read back from
+	 * the store, so it reports NOT_CONFIGURED and a caller checking
+	 * configuredScope can tell.
+	 */
+	@Test
+	public void testSetSiteType_WriteSilentlyDiscarded_ResponseDoesNotClaimSuccess() throws Exception {
+		_setupOmniadmin();
+		_setupChannelGroupWithUnwritableSettings();
+
+		Response response = _resource.setSiteType(_httpServletRequest, 34562L, "{\"siteType\": 1}");
+
+		String json = response.getEntity().toString();
+
+		Assert.assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+		Assert.assertTrue(json, json.contains("\"siteTypeStatus\":\"NOT_CONFIGURED\""));
+		Assert.assertTrue(json, json.contains("\"configuredScope\":\"NONE\""));
+		Assert.assertTrue(json, json.contains("\"configured\":false"));
+
+		// And emphatically not the value that was asked for.
+		Assert.assertFalse(json, json.contains("\"siteType\":1"));
+	}
+
 	private void _setupOmniadmin() throws Exception {
 		_setupAuthenticatedUser();
 
@@ -297,7 +480,7 @@ public class CommerceSiteTypeResourceTest {
 		Mockito.when(_portal.getUser(_httpServletRequest)).thenReturn(user);
 	}
 
-	private void _setupChannelGroupAndSettings(String siteTypeValue, boolean configured) throws Exception {
+	private TestModifiableSettings _setupChannelGroupAndSettings(String siteTypeValue, boolean configured) throws Exception {
 		long channelId = 34562L;
 		long groupId = 34563L;
 
@@ -317,6 +500,36 @@ public class CommerceSiteTypeResourceTest {
 		Mockito.when(_settingsLocatorHelper.getGroupPortletPreferencesSettings(
 			Mockito.eq(groupId), Mockito.eq("com.liferay.commerce.account"), Mockito.any()))
 			.thenReturn(mockSettings);
+
+		return mockSettings;
+	}
+
+	/**
+	 * A settings store that accepts a write and quietly keeps nothing. This is
+	 * the failure mode issue #30 warns about: Liferay's own UI needs a
+	 * change-save-change-back-save cycle before a channel's site type sticks,
+	 * so a bare setValue/store may return without having taken.
+	 */
+	private TestModifiableSettings _setupChannelGroupWithUnwritableSettings() throws Exception {
+		long channelId = 34562L;
+		long groupId = 34563L;
+
+		Group group = Mockito.mock(Group.class);
+		Mockito.when(group.getGroupId()).thenReturn(groupId);
+		Mockito.when(group.getCompanyId()).thenReturn(1001L);
+
+		Mockito.when(_groupLocalService.fetchGroup(1001L, 12345L, channelId)).thenReturn(group);
+		Mockito.when(_groupLocalService.getGroup(groupId)).thenReturn(group);
+
+		TestModifiableSettings mockSettings = new TestModifiableSettings();
+		mockSettings.setValue("commerceSiteType", "0");
+		mockSettings.ignoreWrites();
+
+		Mockito.when(_settingsLocatorHelper.getGroupPortletPreferencesSettings(
+			Mockito.eq(groupId), Mockito.eq("com.liferay.commerce.account"), Mockito.any()))
+			.thenReturn(mockSettings);
+
+		return mockSettings;
 	}
 
 	private void _setupCompanyScopeSettings(String siteTypeValue) throws Exception {
@@ -407,6 +620,31 @@ public class CommerceSiteTypeResourceTest {
 		return jsonObject;
 	}
 
+	/**
+	 * Stands in for the real parser over the PUT body. Presence of the key and
+	 * its numeric value are answered separately, so a non-numeric siteType is
+	 * present-but-unparseable exactly as it would be in production.
+	 */
+	private JSONObject _createParsedJSONObject(String json) throws JSONException {
+		if ((json == null) || !json.trim().startsWith("{")) {
+			throw new JSONException("not an object: " + json);
+		}
+
+		JSONObject jsonObject = Mockito.mock(JSONObject.class);
+
+		boolean present = json.contains("\"siteType\"");
+
+		Matcher matcher = Pattern.compile("\"siteType\"\\s*:\\s*(-?\\d+)").matcher(json);
+
+		final Integer value = matcher.find() ? Integer.valueOf(matcher.group(1)) : null;
+
+		Mockito.when(jsonObject.has("siteType")).thenReturn(present);
+		Mockito.when(jsonObject.getInt(Mockito.eq("siteType"), Mockito.anyInt())).thenAnswer(
+			invocation -> (value != null) ? value : invocation.getArgument(1));
+
+		return jsonObject;
+	}
+
 	private JSONArray _createMockJSONArray() {
 		JSONArray jsonArray = Mockito.mock(JSONArray.class);
 		List<Object> list = new ArrayList<>();
@@ -436,14 +674,25 @@ public class CommerceSiteTypeResourceTest {
 	private static class TestModifiableSettings implements ModifiableSettings {
 		private final Map<String, String> _values = new LinkedHashMap<>();
 		private final Set<String> _modifiedKeys = new HashSet<>();
+		private boolean _ignoreWrites;
 
 		public void addModifiedKey(String key) {
 			_modifiedKeys.add(key);
 		}
 
+		/**
+		 * Makes setValue/store accept and discard, so a caller cannot tell the
+		 * write failed from the return value alone.
+		 */
+		public void ignoreWrites() {
+			_ignoreWrites = true;
+		}
+
 		@Override
 		public ModifiableSettings setValue(String key, String value) {
-			_values.put(key, value);
+			if (!_ignoreWrites) {
+				_values.put(key, value);
+			}
 			return this;
 		}
 
@@ -477,8 +726,16 @@ public class CommerceSiteTypeResourceTest {
 			_values.remove(key);
 		}
 
+		// Real portlet preferences record a stored key as explicitly set,
+		// which is what getModifiedKeys reports and therefore what decides
+		// configuredScope. Setup writes values without storing, so only the
+		// production write path promotes anything here.
 		@Override
-		public void store() {}
+		public void store() {
+			if (!_ignoreWrites) {
+				_modifiedKeys.addAll(_values.keySet());
+			}
+		}
 
 		@Override
 		public ModifiableSettings getModifiableSettings() {
