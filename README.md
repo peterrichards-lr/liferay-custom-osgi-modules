@@ -33,7 +33,7 @@ what — add yourself there when you consume or contribute one.
 |---|---|---|
 | [`fragment-override`](#fragment-override) | **in development** | Headless API rejects specification updates on published site initializer pages |
 | [`search-reindex`](#search-reindex) | **available** | Triggers asynchronous search reindexing for arbitrary entity classes without a published Headless or GraphQL mutation |
-| [`commerce-site-type`](#commerce-site-type) | **available** | Exposes a commerce channel's B2B/B2C/B2X site type and allowed account types |
+| [`commerce-site-type`](#commerce-site-type) | **available** | Reads and sets a commerce channel's B2B/B2C/B2X site type, and reports allowed account types |
 | [`client-extension-entry`](#client-extension-entry) | **available** | Exposes the portlet id Liferay composes for a client extension, which no Liferay API publishes |
 
 ### fragment-override
@@ -112,21 +112,23 @@ The endpoint is strictly gated:
 
 ### commerce-site-type
 
-Exposes a commerce channel's **site type** (`B2C` / `B2B` / `B2X`) and allowed
-account types.
+Reads and sets a commerce channel's **site type** (`B2C` / `B2B` / `B2X`), and
+reports the account types that follow from it.
 
 No headless Liferay API (`/o/headless-commerce-admin-channel/v1.0/channels`) exposes
-a channel's site type. Inside Liferay, this setting is stored in group-scoped OSGi
+a channel's site type, and none sets it either — a channel created through the
+API always has the value unset, which Liferay then treats as B2C. Inside Liferay, this setting is stored in group-scoped OSGi
 configuration (`com.liferay.commerce.account`) on the channel's own `Group`
 (`classNameId = CommerceChannel`, `classPK = channelId`).
 
-#### Endpoint
+#### Endpoints
 
 ```
 GET /o/commerce-site-type/channels/{channelId}/site-type
+PUT /o/commerce-site-type/channels/{channelId}/site-type
 ```
 
-Returns:
+Both return the same shape:
 ```json
 {
   "channelId": 34562,
@@ -138,6 +140,45 @@ Returns:
   "configured": true
 }
 ```
+
+##### Setting the site type
+
+```
+PUT /o/commerce-site-type/channels/{channelId}/site-type
+Content-Type: application/json
+
+{"siteType": 1}
+```
+
+`siteType` must be `0`, `1` or `2`; anything else is HTTP 400 `BadRequest`.
+
+The write targets group scope on the channel's own `Group`, through
+`ModifiableSettings.setValue` + `store()` on the `com.liferay.commerce.account`
+settings — the same store the `GET` reads and the same scope the admin UI
+writes.
+
+**The response is read back from the store after the write, not echoed from the
+request.** `configuredScope` is the field to check: it reads `GROUP` only when
+the value was found explicitly set at group scope, so anything else means the
+write did not land where it was aimed. A mismatch is also logged as a warning
+server-side.
+
+That indirection is deliberate rather than defensive habit. A commerce
+channel's site type is known not to persist until it is changed *and saved* in
+Liferay's own UI — changing to `B2B`, saving, changing back and saving again is
+the observed workaround — which suggests the UI does something beyond writing
+this key. **Whether `setValue` + `store()` alone is sufficient is not yet
+confirmed on a live portal** (see
+[#30](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/30)).
+Until it is, do not treat HTTP 200 as proof: compare `siteType` and
+`configuredScope` in the response, and confirm through a path that does not
+read the same settings object — the account types the channel actually accepts,
+or the admin UI showing the value as chosen rather than defaulted.
+
+A unit test (`testSetSiteType_WriteSilentlyDiscarded_ResponseDoesNotClaimSuccess`)
+pins the behaviour for that case: against a store that accepts a write and keeps
+nothing, the endpoint reports `NOT_CONFIGURED` / `NONE` rather than claiming the
+requested value.
 
 #### Status & Configuration Lifecycle
 
@@ -172,9 +213,12 @@ deployment readiness probe to verify that the module is installed and responding
 #### Security & Permissions
 
 - **Authentication**: Unauthenticated / guest requests return HTTP 401 `Unauthorized`.
-- **Authorization**: Callers require omniadmin, company admin, or `VIEW` permission on the
+- **Authorization (`GET`)**: Callers require omniadmin, company admin, or `VIEW` permission on the
   channel or its group (`com.liferay.commerce.product.model.CommerceChannel`). Unauthorized
   callers return HTTP 403 `Forbidden`.
+- **Authorization (`PUT`)**: `UPDATE` rather than `VIEW`. A channel's site type decides which
+  account types can order in it, so being able to read it does not entitle a caller to change
+  it. `VIEW` alone returns HTTP 403 `Forbidden`.
 
 #### Liferay versions
 
