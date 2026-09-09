@@ -52,31 +52,64 @@ jobs:
         # asset step locally.
         run: ./gradlew clean build --no-daemon -Pversion="${{ steps.ver.outputs.version }}"
 
+      - name: Resolve every bundle against the pinned DXP distro
+        # A release must not be cuttable with a range the target line cannot
+        # satisfy. `resolve` runs the real OSGi resolver against the distro for
+        # liferay.workspace.product, and is the only check here that would have
+        # stopped v3.1.0's four stale kernel ranges -- the build was green and
+        # the manifest guard below passed.
+        #
+        # Scope: this validates the ranges against the line we TARGET. It
+        # cannot catch an artifact built for one line reaching a portal on
+        # another; that is what the consumer-side line assertions are for.
+        run: ./gradlew resolve --no-daemon -Pversion="${{ steps.ver.outputs.version }}"
+
       - name: Verify every bundle declares Import-Package versions
-        # The risk this repo keeps warning about: bnd infers unversioned
-        # imports unless told otherwise, and an unversioned import is how a
-        # bundle silently fails to resolve on a different Liferay line.
-        # Warn rather than fail while fragment-override is still a scaffold
-        # that imports no Liferay API -- tighten to a failure once a module
-        # genuinely depends on com.liferay.*.
+        # The risk this repo keeps warning about, now confirmed rather than
+        # anticipated: the modules compile against the aggregate
+        # `release.dxp.api` jar, which carries no per-package Export-Package
+        # metadata, so bnd cannot derive a range. Dropping an explicit range
+        # from bnd.bnd yields an import with NO version at all -- verified by
+        # removing two and rebuilding. The ranges in bnd.bnd are load-bearing.
+        #
+        # Checked per package. The previous spelling grepped the whole
+        # Import-Package blob for `version=`, so one versioned import anywhere
+        # made every unversioned one in the same bundle pass; a build with two
+        # unversioned com.liferay imports went through it cleanly. `resolve`
+        # does not cover this gap either -- an unversioned import matches any
+        # exported version, so it resolves happily and then binds to whatever
+        # the portal happens to have.
         run: |
-          status=0
           for jar in modules/*/build/libs/*.jar; do
             [ -e "$jar" ] || continue
-            imports=$(unzip -p "$jar" META-INF/MANIFEST.MF | tr -d '\r\n' \
-              | sed -n 's/.*Import-Package: \([^A-Z]*\).*/\1/p')
-            case "$imports" in
-              *com.liferay*)
-                echo "$imports" | grep -q 'version=' || {
-                  echo "::error::$jar imports com.liferay.* with no version range"
-                  status=1
-                }
-                ;;
-              *)
-                echo "::notice::$(basename "$jar") imports no com.liferay.* packages" ;;
-            esac
+            unzip -p "$jar" META-INF/MANIFEST.MF | tr -d '\r' | perl -0 -sne '
+              my ($imports) = /^Import-Package: (.*?)^\S/ms;
+              ($imports) = /^Import-Package: (.*)/ms if !defined $imports;
+              $imports =~ s/\n //g;
+              # Split on commas outside quotes, so a uses:="a,b" directive
+              # does not fragment a clause.
+              my (@clauses, $buf, $q) = ((), "", 0);
+              for my $ch (split //, $imports) {
+                $q = !$q if $ch eq q{"};
+                if ($ch eq "," && !$q) { push @clauses, $buf; $buf = "" }
+                else { $buf .= $ch }
+              }
+              push @clauses, $buf;
+
+              my ($seen, $bad) = (0, 0);
+              for my $c (@clauses) {
+                $c =~ s/^\s+|\s+$//g;
+                next unless $c =~ /^com\.liferay/;
+                $seen++;
+                my ($pkg) = $c =~ /^([^;]+)/;
+                next if $c =~ /version=/;
+                print "::error::$jar imports $pkg with no version range\n";
+                $bad++;
+              }
+              print "::notice::$jar imports no com.liferay.* packages\n" if !$seen;
+              exit($bad ? 1 : 0);
+            ' -- -jar="$(basename "$jar")" || exit 1
           done
-          exit $status
 
       - name: Publish to GitHub Packages
         # -Pversion must be passed here too. Without it the publish resolves to

@@ -11,10 +11,10 @@ Import-Package:\
 	com.liferay.portal.kernel.exception;version="[16.0,17.0)",\
 	com.liferay.portal.kernel.json;version="[12.0,13.0)",\
 	com.liferay.portal.kernel.log;version="[10.0,11.0)",\
-	com.liferay.portal.kernel.model;version="[48.0,49.0)",\
-	com.liferay.portal.kernel.search;version="[22.0,23.0)",\
+	com.liferay.portal.kernel.model;version="[51.0,52.0)",\
+	com.liferay.portal.kernel.search;version="[24.0,25.0)",\
 	com.liferay.portal.kernel.security.permission;version="[13.0,14.0)",\
-	com.liferay.portal.kernel.util;version="[96.0,97.0)",\
+	com.liferay.portal.kernel.util;version="[100.0,101.0)",\
 	com.liferay.portal.kernel.workflow;version="[27.0,28.0)",\
 	com.liferay.portal.vulcan.pagination;version="[1.0,2.0)",\
 	*

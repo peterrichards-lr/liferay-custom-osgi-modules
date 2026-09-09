@@ -17,6 +17,7 @@ consuming a module in a way its author would not expect, say so in the notes
 | [liferay-docker-manager](https://github.com/peterrichards-lr/liferay-docker-manager) | `fragment-override` | *pending* | Drove the module. Configuration routes ruled out (LPS-178052 is POST-only, LPS-165482 is sync-only; tracked in LPD-99955). Will switch once the module is implemented behind `feature.flag.LPD-99955=true`. See [#1601](https://github.com/peterrichards-lr/liferay-docker-manager/issues/1601). |
 | [liferay-ai-commerce-accelerator](https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator) | `search-reindex` | *pending* | Adopted from `aica-reindex-endpoint`. Triggers asynchronous search reindexing for arbitrary entity classes where no Headless REST or GraphQL mutation exists. Answers on `/search-reindex` (scope `Custom.Search.Reindex`). See [#4](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/4). |
 | [liferay-ai-commerce-accelerator](https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator) | `commerce-site-type` | *pending* | Exposes channel B2B/B2C/B2X site type and allowed account types, which are not exposed by any headless API or JSONWS endpoint. See [#610](https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator/issues/610). |
+| [liferay-ai-commerce-accelerator](https://github.com/peterrichards-lr/liferay-ai-commerce-accelerator) | `client-extension-entry` | *pending* | Resolves the portlet id Liferay composes for a client extension. Backs the Dashboard's *Adjust Configuration* button, which has no headless route to that id. See [#28](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/28). |
 
 ## Contributors of modules
 
@@ -32,4 +33,4 @@ affecting more than one tool, it is welcome here and should be listed above.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-04* | *Last Reviewed: 2026-09-04*
+*Last Updated: 2026-09-09* | *Last Reviewed: 2026-09-09*

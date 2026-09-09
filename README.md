@@ -178,18 +178,20 @@ deployment readiness probe to verify that the module is installed and responding
 
 #### Liferay versions
 
-Compiled against `dxp-2026.q1.12-lts`, the workspace pin.
+Compiled against `dxp-2026.q3.0`, the workspace pin.
 
 The `Import-Package` ranges in `bnd.bnd` are bounded to the current major of each
 package and are **kernel-only** — `com.liferay.portal.kernel.{exception, json, log,
-model, security.permission, service, settings, util}`. Nothing from a commerce
+model, security.permission, service, settings, util}`. Kernel-only does not mean
+line-agnostic: `model`, `service` and `util` all crossed a major between
+q1.12-lts and q3.0. Nothing from a commerce
 bundle is imported: the channel is reached through `GroupLocalServiceUtil` and
 referred to by class-name string, and the site type is read through
 `GroupServiceSettingsLocator` and its company and system counterparts.
 
 **Runtime verification is outstanding.** The 13 unit tests exercise the resolution
 logic with mocks; they do not exercise OSGi wiring, so the ranges above are not yet
-confirmed at either end of any line span. Deploying to a `2026.q1.12-lts` instance
+confirmed at either end of any line span. Deploying to a `2026.q3.0` instance
 and to one other line, and confirming the bundle resolves and
 `/o/commerce-site-type/status` answers, is what would settle it.
 
@@ -266,7 +268,7 @@ id as:
 ```
 
 Verified by decompiling `com.liferay.client.extension.web 1.0.94`, the artifact
-the pinned `dxp-2026.q1.12-lts` ships, rather than from `master` alone. The
+`dxp-2026.q1.12-lts` shipped, rather than from `master` alone. The
 company id segment was introduced by `client-extension-web` upgrade step
 `v3_0_1` (`UpgradePortletId`), which renamed `prefix + externalReferenceCode` to
 `prefix + companyId + "_" + externalReferenceCode`.
@@ -382,18 +384,20 @@ Intentionally unauthenticated, as a lightweight deployment readiness probe.
 
 #### Liferay versions
 
-Compiled against `dxp-2026.q1.12-lts`, the workspace pin.
+Compiled against `dxp-2026.q3.0`, the workspace pin.
 
 Unlike `commerce-site-type`, this module cannot be kernel-only: the client
 extension registry has no kernel-facing API, so it imports
 `com.liferay.client.extension.{constants, model, service, type, type.manager,
 util}` alongside the kernel packages and `com.liferay.portal.vulcan.pagination`.
-Those application packages change major more readily than kernel ones, so this
-is expected to be a **per-DXP-line artifact** — see the resolution below.
+This is a **per-DXP-line artifact** — see the resolution below. Note which half
+of that import set actually forced the q1.12-lts → q3.0 rebuild: every
+`com.liferay.client.extension.*` range still held on 2026.Q3.0, and the kernel
+packages did not.
 
 **Runtime verification is outstanding.** The 22 unit tests exercise the
 composition, source-type and authorisation logic with mocks; they do not
-exercise OSGi wiring. Deploying to a `2026.q1.12-lts` instance and confirming
+exercise OSGi wiring. Deploying to a `2026.q3.0` instance and confirming
 that the bundle resolves, that `/o/client-extension-entry/status` answers, and
 that the returned `portletId` matches the one Liferay registered, is what would
 settle it.
@@ -429,11 +433,11 @@ gh release download v1.1.0 \
 
 shasum -a 256 -c *.sha256
 
-ldm deploy <project> com.liferay.custom.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar
+ldm deploy <project> com.liferay.custom.fragment.override-1.1.0-dxp-2026.q3.0.jar
 ```
 
 **The DXP line is in the filename, not only the metadata**, e.g.
-`com.liferay.custom.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar`. A mismatch
+`com.liferay.custom.fragment.override-1.1.0-dxp-2026.q3.0.jar`. A mismatch
 between the bundle and the portal you are deploying into is then visible when
 you download it, rather than surfacing later as a resolution failure inside a
 running instance.
@@ -502,7 +506,7 @@ at its default.
 
 ## Liferay version
 
-`gradle.properties` pins `liferay.workspace.product=dxp-2026.q1.12-lts`.
+`gradle.properties` pins `liferay.workspace.product=dxp-2026.q3.0`.
 
 That pin is a **compile target, not a support range.**
 
@@ -514,17 +518,33 @@ Liferay DXP line has been settled with empirical evidence:
 1. **Breaking Package Export Increments**: Inspection of target platform baselines
    revealed that Liferay bumps major package versions across DXP quarterly lines.
    For example, `com.liferay.fragment.service` bumped from `15.0.0` in DXP 2025.Q4
-   to `16.0.0` in DXP 2026.Q1, and `com.liferay.portal.kernel.util` sits at `96.6.0`.
+   to `16.0.0` in DXP 2026.Q1, and again to `17.1.0` in DXP 2026.Q3.
 2. **Bounded OSGi Consumer Ranges**: Under OSGi semantic versioning, consumer
    import ranges for services and models must be bounded to the current major version
-   (`[16.0, 17.0)` for `com.liferay.fragment.service`, `[5.0, 6.0)` for
+   (`[17.0, 18.0)` for `com.liferay.fragment.service`, `[5.0, 6.0)` for
    `com.liferay.fragment.model`). A bundle compiled against 2026.Q1 cannot satisfy its
    wiring requirements on 2025.Q4 runtimes.
+3. **Kernel packages are not the stable exception.** This was assumed here and in
+   consuming projects, on the strength of q1.7-lts through q1.12-lts holding steady.
+   Moving from `dxp-2026.q1.12-lts` to `dxp-2026.q3.0` broke it: four kernel
+   packages crossed a major in a single hop.
+
+   | Kernel package | q1.12-lts range | Exported on 2026.Q3.0 |
+   |---|---|---|
+   | `com.liferay.portal.kernel.model` | `[48.0,49.0)` | `51.0.0` |
+   | `com.liferay.portal.kernel.search` | `[22.0,23.0)` | `24.2.0` |
+   | `com.liferay.portal.kernel.service` | `[52.0,53.0)` | `54.1.0` |
+   | `com.liferay.portal.kernel.util` | `[96.0,97.0)` | `100.0.0` |
+
+   Only `com.liferay.portal.kernel.model` appeared in the deployment log, because
+   the OSGi resolver reports the first unsatisfied requirement and stops. Read a
+   `Could not resolve module` error as *at least* one broken range, never as
+   exactly one.
 
 A bundle is a per-DXP-line artifact whenever it imports packages whose major
-versions differ across the lines it targets. `fragment-override` is one:
-`com.liferay.fragment.service` is `15.x` on 2025.Q4 and `16.x` on 2026.Q1, so
-no single bounded range spans both.
+versions differ across the lines it targets. On the evidence above, every module
+in this repository is one — a kernel-only import set does not buy line
+independence.
 
 This is a consequence of a module's imports, not a blanket rule of this repository.
 Check your own import set before assuming it applies — a module importing
@@ -532,7 +552,7 @@ only packages that are stable across your target lines can ship as a single
 artifact spanning releases.
 
 The `-dxp-<tag>.jar` suffix in release asset filenames (e.g.
-`com.liferay.custom.fragment.override-1.1.0-dxp-2026.q1.12-lts.jar`) remains standard
+`com.liferay.custom.fragment.override-1.1.0-dxp-2026.q3.0.jar`) remains standard
 either way: it is correct for per-line bundles and harmless for a bundle that
 spans lines.
 
