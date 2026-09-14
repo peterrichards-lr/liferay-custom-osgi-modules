@@ -473,6 +473,64 @@ into the same picker slot — so switching between Plan A and Plan B is a dropdo
 change on the page rather than re-authoring it. That substitution property is
 the entire justification for the bundle.
 
+#### Using it
+
+The module has no REST surface. Everything is done in the UI, and the only build
+artifact is the bundle.
+
+**1. Deploy the bundle.** Drop the jar into the instance's `osgi/modules`, or from
+the workspace:
+
+```bash
+blade gw deploy
+```
+
+Confirm it started — the provider is invisible until the component is active:
+
+```bash
+# in the Gogo shell
+lb | grep user.group.recommendations      # expect Active
+scr:info com.liferay.user.group.recommendations.UserGroupRecommendationsInfoCollectionProvider
+```
+
+The component must report **satisfied**. If it is unsatisfied, a `@Reference` did
+not bind and the provider will not appear in step 4.
+
+**2. Create the user groups.** *Control Panel → Users → User Groups → Add*. Create
+one per audience, for example `Riders` and `Engineering`. The names are yours; the
+module reads whatever exists.
+
+**3. Assign users.** *Control Panel → Users and Organizations*, select each user →
+*User Groups* → assign. The module **reads** membership, it does not establish it —
+nothing happens until users are actually in a group.
+
+**4. Add the collection to a page.** Edit a Content Page → drag in a **Collection
+Display** fragment → in its sidebar choose the collection source, and pick
+**Recommended for Your Group** from the *Providers* list.
+
+**5. Configure it.** The sidebar now shows one multiselect per user group. Pick the
+entries each group should see, in the order they should appear. Set the two
+behaviour options, then **Publish**.
+
+**6. Verify.** Do not log out and back in six times. Use
+*Control Panel → Users → select a user → Actions → **Impersonate User***, view the
+page, then end impersonation. Each group should show exactly the entries configured
+for it.
+
+##### If the collection comes back empty
+
+| Symptom | Likely cause |
+|---|---|
+| Provider missing from the *Providers* list | Bundle not Active, or the component is unsatisfied — check step 1 |
+| No user group fields in the sidebar | `getConfigurationInfoForm()` saw no service context. This is the known unverified risk below; the mapping would need to move to OSGi configuration |
+| Empty for every user | Nobody is in a user group, or the fields were never saved. Check step 3 |
+| Empty for one user only | That user is in no configured group — expected, and controlled by the *no group* behaviour setting |
+| Fewer entries than configured | Some are unapproved or deleted; the provider skips them by design |
+| Wrong order | See the ordering caveat below |
+
+A failure to resolve the current user is logged at `ERROR` against
+`com.liferay.user.group.recommendations`.
+
 #### Configuration
 
 Nothing is compiled in. The module implements `ConfigurableInfoCollectionProvider`,
