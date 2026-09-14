@@ -5,12 +5,14 @@ import com.liferay.object.model.ObjectDefinition;
 import com.liferay.object.service.ObjectDefinitionLocalService;
 import com.liferay.object.service.ObjectEntryLocalService;
 import com.liferay.portal.configuration.metatype.bnd.util.ConfigurableUtil;
+import com.liferay.portal.kernel.dao.orm.QueryUtil;
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
 import com.liferay.portal.kernel.model.Company;
 import com.liferay.portal.kernel.service.CompanyLocalService;
 import com.liferay.portal.kernel.service.UserGroupLocalService;
 import com.liferay.portal.kernel.util.HashMapDictionaryBuilder;
+import com.liferay.portal.kernel.util.StringUtil;
 import com.liferay.portal.kernel.util.Validator;
 import com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration;
 
@@ -129,12 +131,36 @@ public class UserGroupRecommendationsObjectRegistrar {
 			return objectDefinition;
 		}
 
-		if (reference.startsWith(_CUSTOM_NAME_PREFIX)) {
-			return null;
+		if (!reference.startsWith(_CUSTOM_NAME_PREFIX)) {
+			objectDefinition =
+				_objectDefinitionLocalService.fetchObjectDefinition(
+					companyId, _CUSTOM_NAME_PREFIX + reference);
+
+			if (objectDefinition != null) {
+				return objectDefinition;
+			}
 		}
 
-		return _objectDefinitionLocalService.fetchObjectDefinition(
-			companyId, _CUSTOM_NAME_PREFIX + reference);
+		// Last resort, case-insensitively. Liferay derives a definition's name
+		// from the label with its own capitalisation -- a definition labelled
+		// "MotorBlog" is named "Motorblog" -- so an administrator copying the
+		// label into configuration would otherwise get no match and no clue
+		// why.
+
+		for (ObjectDefinition candidate :
+				_objectDefinitionLocalService.getObjectDefinitions(
+					companyId, true, QueryUtil.ALL_POS)) {
+
+			if (StringUtil.equalsIgnoreCase(
+					candidate.getName(), reference) ||
+				StringUtil.equalsIgnoreCase(
+					candidate.getName(), _CUSTOM_NAME_PREFIX + reference)) {
+
+				return candidate;
+			}
+		}
+
+		return null;
 	}
 
 	private void _register(Company company, String externalReferenceCode) {
