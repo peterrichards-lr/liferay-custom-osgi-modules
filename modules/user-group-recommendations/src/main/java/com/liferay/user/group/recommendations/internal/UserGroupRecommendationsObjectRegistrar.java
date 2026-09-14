@@ -5,7 +5,6 @@ import com.liferay.object.model.ObjectDefinition;
 import com.liferay.object.service.ObjectDefinitionLocalService;
 import com.liferay.object.service.ObjectEntryLocalService;
 import com.liferay.portal.configuration.metatype.bnd.util.ConfigurableUtil;
-import com.liferay.portal.kernel.dao.orm.QueryUtil;
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
 import com.liferay.portal.kernel.model.Company;
@@ -14,10 +13,12 @@ import com.liferay.portal.kernel.service.UserGroupLocalService;
 import com.liferay.portal.kernel.util.HashMapDictionaryBuilder;
 import com.liferay.portal.kernel.util.StringUtil;
 import com.liferay.portal.kernel.util.Validator;
+import com.liferay.portal.kernel.workflow.WorkflowConstants;
 import com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.osgi.framework.BundleContext;
@@ -113,16 +114,23 @@ public class UserGroupRecommendationsObjectRegistrar {
 	}
 
 	/**
-	 * Resolves a configured value as an external reference code, then as an
-	 * object definition name, then as a custom object definition name with the
-	 * {@code C_} prefix Liferay adds.
+	 * Resolves a configured value to an object definition, accepting any of the
+	 * identifiers a person might reasonably write.
 	 *
 	 * <p>
-	 * The name forms matter for custom content types. A system definition has a
-	 * legible {@code L_}-prefixed code, but a custom one created through the UI
-	 * is given a generated external reference code, and pinning a configuration
-	 * file to a generated identifier is both unreadable and not portable between
-	 * environments. Accepting {@code MotorBlog} keeps the file legible.
+	 * In order: external reference code, exact name, the {@code C_}-prefixed
+	 * name Liferay gives custom definitions, and finally a case-insensitive
+	 * comparison against name, short name and every localised label.
+	 * </p>
+	 *
+	 * <p>
+	 * The label matters most in practice and was the omission that broke the
+	 * first deployment. Liferay derives a definition's name from its label with
+	 * its own capitalisation -- a definition labelled {@code MotorBlog} is named
+	 * {@code Motorblog} -- and the label is the only one of the two an
+	 * administrator ever sees. A generated external reference code is no help
+	 * either, being a UUID. Matching the label is what makes a configuration
+	 * file writable from what is on screen.
 	 * </p>
 	 */
 	private ObjectDefinition _fetchObjectDefinition(
@@ -154,26 +162,48 @@ public class UserGroupRecommendationsObjectRegistrar {
 			}
 		}
 
-		// Last resort, case-insensitively. Liferay derives a definition's name
-		// from the label with its own capitalisation -- a definition labelled
-		// "MotorBlog" is named "Motorblog" -- so an administrator copying the
-		// label into configuration would otherwise get no match and no clue
-		// why.
+		// STATUS_APPROVED, not QueryUtil.ALL_POS. This is a persistence finder
+		// doing an exact match on the status column, so the -1 that means "any"
+		// elsewhere matches no row at all -- an approved definition has status
+		// 0. Passing it left this scan iterating an empty list, so the label
+		// and case-insensitive matching below silently never ran.
 
 		for (ObjectDefinition candidate :
 				_objectDefinitionLocalService.getObjectDefinitions(
-					companyId, true, QueryUtil.ALL_POS)) {
+					companyId, true, WorkflowConstants.STATUS_APPROVED)) {
 
-			if (StringUtil.equalsIgnoreCase(
-					candidate.getName(), reference) ||
-				StringUtil.equalsIgnoreCase(
-					candidate.getName(), _CUSTOM_NAME_PREFIX + reference)) {
-
+			if (_matches(candidate, reference)) {
 				return candidate;
 			}
 		}
 
 		return null;
+	}
+
+	private boolean _matches(ObjectDefinition objectDefinition, String reference) {
+		if (StringUtil.equalsIgnoreCase(
+				objectDefinition.getName(), reference) ||
+			StringUtil.equalsIgnoreCase(
+				objectDefinition.getName(), _CUSTOM_NAME_PREFIX + reference) ||
+			StringUtil.equalsIgnoreCase(
+				objectDefinition.getShortName(), reference)) {
+
+			return true;
+		}
+
+		Map<Locale, String> labelMap = objectDefinition.getLabelMap();
+
+		if (labelMap == null) {
+			return false;
+		}
+
+		for (String label : labelMap.values()) {
+			if (StringUtil.equalsIgnoreCase(label, reference)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private void _register(Company company, String externalReferenceCode) {
@@ -184,9 +214,10 @@ public class UserGroupRecommendationsObjectRegistrar {
 			_log.error(
 				"No object definition matches \"" + externalReferenceCode +
 					"\" in company " + company.getCompanyId() +
-						" as an external reference code, a name, or a name " +
+						" as an external reference code, a name, a name " +
 							"prefixed " + _CUSTOM_NAME_PREFIX +
-								", so no collection provider was registered");
+								", a short name, or a label, so no collection " +
+									"provider was registered");
 
 			return;
 		}
