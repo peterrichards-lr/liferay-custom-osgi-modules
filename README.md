@@ -743,6 +743,46 @@ Liferay DXP line has been settled with empirical evidence:
    `Could not resolve module` error as *at least* one broken range, never as
    exactly one.
 
+### Keeping the ranges honest
+
+The ranges in each `bnd.bnd` are hand-written, and necessarily so: the modules
+compile against the aggregate `release.dxp.api` jar, which carries no
+`Export-Package` header, so bnd derives **no version at all** rather than a
+wrong one. An unversioned import matches any exported version and then binds to
+whatever the portal happens to have, which is worse than a stale range.
+
+The numbers are nonetheless *in* that jar, as one `packageinfo` file per
+package. `scripts/check_import_ranges.py` reads them and checks every declared
+range against the line named by `liferay.workspace.product`:
+
+```bash
+jar=$(./gradlew -q printDxpApiJar)
+
+python3 scripts/check_import_ranges.py "$jar"          # verify
+python3 scripts/check_import_ranges.py "$jar" --fix    # rewrite every bnd.bnd
+```
+
+`--fix` makes a line rebump mechanical: change `liferay.workspace.product`,
+rerun with `--fix`, rebuild.
+
+**It does not replace either existing gate.** `resolve` validates the whole
+wiring against the real distro; the per-package manifest guard in `publish.yml`
+catches an import that reached the manifest unversioned. What this adds is
+cheaper and more complete reporting of one specific failure — a range pinned to
+the wrong line. The OSGi resolver stops at the **first** unsatisfied
+requirement, so a rebump surfaces one broken range per build; this names all of
+them at once. Run against the `q1.12-lts` jar, today's ranges report 17
+mismatches, including the four kernel packages in the table above.
+
+One thing the check deliberately does not do is tighten the convention. This
+repository floors a range to the major (`[24.0,25.0)` for an exported `24.2.0`),
+whereas bnd's own consumer policy `${range;[==,+)}` would floor to the compiled
+minor (`[24.2,25.0)`). The repository's form is **wider**, and so permits
+binding to an older minor that may lack methods the code was compiled against.
+25 of 33 imported packages differ on this point. Pass `--policy bnd` to see what
+the narrower ranges would be; adopting them is tracked separately from
+[#33](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/33).
+
 A bundle is a per-DXP-line artifact whenever it imports packages whose major
 versions differ across the lines it targets. On the evidence above, every module
 in this repository is one — a kernel-only import set does not buy line

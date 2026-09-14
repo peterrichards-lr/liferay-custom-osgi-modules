@@ -22,6 +22,25 @@ jobs:
       - name: Build against the pinned DXP version
         run: ./gradlew build --no-daemon
 
+      - name: Check Import-Package ranges against the target platform
+        # Cheap complement to `resolve`, not a replacement (issue #33).
+        #
+        # bnd cannot derive these ranges: the modules compile against the
+        # aggregate release.dxp.api jar, which has no Export-Package header, so
+        # bnd emits imports with no version at all. The ranges in bnd.bnd are
+        # therefore hand-written -- but the numbers ARE in that jar, one
+        # packageinfo file per package, and nothing stops us reading them.
+        #
+        # Why this earns its place next to `resolve`: the OSGi resolver reports
+        # the FIRST unsatisfied requirement and stops, so a line rebump surfaces
+        # one broken range per build. This reports every one of them at once, by
+        # name, with the expected value -- and runs before the distro download,
+        # so a stale range fails in seconds rather than minutes.
+        run: |
+          jar=$(./gradlew -q printDxpApiJar --no-daemon | tail -1)
+          echo "Target platform API jar: $jar"
+          python3 scripts/check_import_ranges.py "$jar"
+
       - name: Resolve every bundle against the pinned DXP distro
         # The gate the manifest-printing step here was always meant to become.
         # A compile proves nothing about resolution: javac never reads OSGi
