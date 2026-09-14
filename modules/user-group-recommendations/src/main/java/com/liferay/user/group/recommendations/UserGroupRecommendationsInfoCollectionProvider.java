@@ -20,6 +20,7 @@ import com.liferay.portal.kernel.util.ResourceBundleUtil;
 import com.liferay.portal.kernel.util.StringUtil;
 import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
+import com.liferay.user.group.recommendations.internal.CurrentUserUtil;
 import com.liferay.user.group.recommendations.internal.InfoPageUtil;
 import com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration;
 
@@ -94,6 +95,8 @@ public class UserGroupRecommendationsInfoCollectionProvider
 	implements InfoCollectionProvider<BlogsEntry> {
 
 	public static final String FALLBACK_EMPTY = "empty";
+
+	public static final String FALLBACK_RANDOM = "random";
 
 	public static final String FALLBACK_RECENT = "recent";
 
@@ -180,7 +183,7 @@ public class UserGroupRecommendationsInfoCollectionProvider
 			return Collections.emptyList();
 		}
 
-		long userId = serviceContext.getUserId();
+		long userId = CurrentUserUtil.getUserId(serviceContext);
 
 		if (userId <= 0) {
 			return Collections.emptyList();
@@ -253,16 +256,33 @@ public class UserGroupRecommendationsInfoCollectionProvider
 		String fallback = GetterUtil.getString(
 			_configuration.fallback(), FALLBACK_EMPTY);
 
-		if (!FALLBACK_RECENT.equals(fallback)) {
+		if (FALLBACK_EMPTY.equals(fallback)) {
 			return Collections.emptyList();
 		}
 
-		return _blogsEntryLocalService.getGroupEntries(
-			serviceContext.getScopeGroupId(),
-			new QueryDefinition<>(
-				WorkflowConstants.STATUS_APPROVED, 0, _FALLBACK_LIMIT, null));
-	}
+		int limit = _configuration.fallbackLimit();
 
+		if (limit <= 0) {
+			limit = _DEFAULT_FALLBACK_LIMIT;
+		}
+
+		List<BlogsEntry> blogsEntries = new ArrayList<>(
+			_blogsEntryLocalService.getGroupEntries(
+				serviceContext.getScopeGroupId(),
+				new QueryDefinition<>(
+					WorkflowConstants.STATUS_APPROVED, 0, _FALLBACK_POOL,
+					null)));
+
+		if (FALLBACK_RANDOM.equals(fallback)) {
+			Collections.shuffle(blogsEntries);
+		}
+
+		if (blogsEntries.size() > limit) {
+			return new ArrayList<>(blogsEntries.subList(0, limit));
+		}
+
+		return blogsEntries;
+	}
 
 	/**
 	 * Resolves each reference as an external reference code, then a friendly
@@ -318,7 +338,9 @@ public class UserGroupRecommendationsInfoCollectionProvider
 		return blogsEntries;
 	}
 
-	private static final int _FALLBACK_LIMIT = 20;
+	private static final int _DEFAULT_FALLBACK_LIMIT = 3;
+
+	private static final int _FALLBACK_POOL = 100;
 
 	private static final Log _log = LogFactoryUtil.getLog(
 		UserGroupRecommendationsInfoCollectionProvider.class);

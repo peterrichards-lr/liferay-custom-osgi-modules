@@ -47,7 +47,21 @@ public class UserGroupMapping {
 		String[] lines, String scope, long userId, String multiGroupStrategy,
 		UserGroupLocalService userGroupLocalService) {
 
-		if ((lines == null) || (lines.length == 0) || (userId <= 0)) {
+		if ((lines == null) || (lines.length == 0)) {
+			return Collections.emptySet();
+		}
+
+		if (userId <= 0) {
+
+			// A guest, or a context with no resolvable user. Saying so matters:
+			// this returned silently before and was indistinguishable from a
+			// user who simply matched no configured group.
+
+			if (_log.isInfoEnabled()) {
+				_log.info(
+					"No signed-in user, so no recommendations apply");
+			}
+
 			return Collections.emptySet();
 		}
 
@@ -61,6 +75,12 @@ public class UserGroupMapping {
 		}
 
 		if (userGroupNames.isEmpty()) {
+			if (_log.isInfoEnabled()) {
+				_log.info(
+					"User " + userId + " belongs to no user groups, so no " +
+						"recommendations apply");
+			}
+
 			return Collections.emptySet();
 		}
 
@@ -113,6 +133,12 @@ public class UserGroupMapping {
 
 			if (!userGroupNames.contains(userGroupName)) {
 				continue;
+			}
+
+			if (_log.isInfoEnabled()) {
+				_log.info(
+					"User " + userId + " matched configured user group \"" +
+						userGroupName + "\"");
 			}
 
 			for (String reference : remainder.substring(equals + 1).split(",")) {
