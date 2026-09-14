@@ -77,3 +77,34 @@ subprojects {
 		}
 	}
 }
+
+// Resolves the aggregate API jar for the pinned target platform, so
+// scripts/check_import_ranges.py can read its packageinfo files. See issue #33:
+// bnd cannot derive Import-Package versions from this jar because it carries no
+// Export-Package header, but the numbers are in it and can be read directly.
+repositories {
+	mavenLocal()
+
+	maven {
+		url "https://repository-cdn.liferay.com/nexus/content/groups/public"
+	}
+}
+
+configurations {
+	dxpApi
+}
+
+dependencies {
+	dxpApi group: "com.liferay.portal", name: "release.dxp.api",
+		version: property("liferay.workspace.product").replaceFirst(/^dxp-/, "")
+}
+
+tasks.register("printDxpApiJar") {
+	description = "Prints the path of the resolved release.dxp.api jar."
+
+	def apiFiles = configurations.dxpApi
+
+	doLast {
+		println apiFiles.singleFile.absolutePath
+	}
+}
