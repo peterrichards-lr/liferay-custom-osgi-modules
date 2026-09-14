@@ -47,11 +47,13 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 
 	public ObjectEntryUserGroupRecommendationsInfoCollectionProvider(
 		Supplier<UserGroupRecommendationsConfiguration> configurationSupplier,
-		String label, ObjectDefinition objectDefinition,
+		String configuredReference, String label,
+		ObjectDefinition objectDefinition,
 		ObjectEntryLocalService objectEntryLocalService,
 		UserGroupLocalService userGroupLocalService) {
 
 		_configurationSupplier = configurationSupplier;
+		_configuredReference = configuredReference;
 		_label = label;
 		_objectDefinition = objectDefinition;
 		_objectEntryLocalService = objectEntryLocalService;
@@ -81,8 +83,7 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 
 			Set<String> references = UserGroupMapping.getReferences(
 				configuration.objectUserGroupEntries(),
-				_objectDefinition.getExternalReferenceCode(),
-				serviceContext.getUserId(),
+				_configuredReference, serviceContext.getUserId(),
 				GetterUtil.getString(
 					configuration.multiGroupStrategy(), "firstMatch"),
 				_userGroupLocalService);
@@ -206,6 +207,7 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 
 	private final Supplier<UserGroupRecommendationsConfiguration>
 		_configurationSupplier;
+	private final String _configuredReference;
 	private final String _label;
 	private final ObjectDefinition _objectDefinition;
 	private final ObjectEntryLocalService _objectEntryLocalService;

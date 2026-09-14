@@ -566,17 +566,31 @@ Recommendations*, and deploys as a file under `configs/<env>/osgi/configs/`:
 ```properties
 # com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration.config
 
-objectDefinitionExternalReferenceCodes=["L_CMS_MOTORBLOG"]
+objectDefinitionExternalReferenceCodes=["MotorBlog"]
 
 objectUserGroupEntries=[\
-  "L_CMS_MOTORBLOG|Riders=ERC-SCENIC-ROUTE,ERC-SOLARA-HORIZON,ERC-SOLO-CAMPING",\
-  "L_CMS_MOTORBLOG|Engineering=ERC-SOUL-OF-SOLARA,ERC-BLUEPRINT,ERC-SOURCING"\
+  "MotorBlog|Riders=ERC-SCENIC-ROUTE,ERC-SOLARA-HORIZON,ERC-SOLO-CAMPING",\
+  "MotorBlog|Engineering=ERC-SOUL-OF-SOLARA,ERC-BLUEPRINT,ERC-SOURCING"\
 ]
 
 multiGroupStrategy="firstMatch"
 fallback="empty"
 label="Recommended for Your Group"
 ```
+
+Each value is resolved as an **external reference code**, then as an object
+definition **name**, then as a name with the `C_` prefix Liferay gives custom
+definitions. So a custom content type can be named plainly:
+
+| Written in config | Matches |
+|---|---|
+| `MotorBlog` | ERC `MotorBlog`, name `MotorBlog`, or name `C_MotorBlog` |
+| `L_CMS_BLOG` | the stock CMS Blog definition, by ERC |
+
+That matters for custom types. A system definition has a legible `L_`-prefixed
+code, but one created through the UI gets a **generated** external reference
+code, and pinning a configuration file to a generated identifier is neither
+readable nor portable between environments.
 
 For legacy Blogs use `userGroupEntries` instead, without the content-type prefix:
 

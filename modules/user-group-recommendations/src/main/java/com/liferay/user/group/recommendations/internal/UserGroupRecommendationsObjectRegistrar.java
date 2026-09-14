@@ -97,18 +97,57 @@ public class UserGroupRecommendationsObjectRegistrar {
 		_unregisterAll();
 	}
 
-	private void _register(Company company, String externalReferenceCode) {
+	/**
+	 * Resolves a configured value as an external reference code, then as an
+	 * object definition name, then as a custom object definition name with the
+	 * {@code C_} prefix Liferay adds.
+	 *
+	 * <p>
+	 * The name forms matter for custom content types. A system definition has a
+	 * legible {@code L_}-prefixed code, but a custom one created through the UI
+	 * is given a generated external reference code, and pinning a configuration
+	 * file to a generated identifier is both unreadable and not portable between
+	 * environments. Accepting {@code MotorBlog} keeps the file legible.
+	 * </p>
+	 */
+	private ObjectDefinition _fetchObjectDefinition(
+		long companyId, String reference) {
+
 		ObjectDefinition objectDefinition =
 			_objectDefinitionLocalService.
 				fetchObjectDefinitionByExternalReferenceCode(
-					externalReferenceCode, company.getCompanyId());
+					reference, companyId);
+
+		if (objectDefinition != null) {
+			return objectDefinition;
+		}
+
+		objectDefinition = _objectDefinitionLocalService.fetchObjectDefinition(
+			companyId, reference);
+
+		if (objectDefinition != null) {
+			return objectDefinition;
+		}
+
+		if (reference.startsWith(_CUSTOM_NAME_PREFIX)) {
+			return null;
+		}
+
+		return _objectDefinitionLocalService.fetchObjectDefinition(
+			companyId, _CUSTOM_NAME_PREFIX + reference);
+	}
+
+	private void _register(Company company, String externalReferenceCode) {
+		ObjectDefinition objectDefinition = _fetchObjectDefinition(
+			company.getCompanyId(), externalReferenceCode);
 
 		if (objectDefinition == null) {
 			_log.error(
-				"No object definition with external reference code " +
-					externalReferenceCode + " exists in company " +
-						company.getCompanyId() +
-							", so no collection provider was registered");
+				"No object definition matches \"" + externalReferenceCode +
+					"\" in company " + company.getCompanyId() +
+						" as an external reference code, a name, or a name " +
+							"prefixed " + _CUSTOM_NAME_PREFIX +
+								", so no collection provider was registered");
 
 			return;
 		}
@@ -122,8 +161,9 @@ public class UserGroupRecommendationsObjectRegistrar {
 			_bundleContext.registerService(
 				InfoCollectionProvider.class,
 				new ObjectEntryUserGroupRecommendationsInfoCollectionProvider(
-					() -> _configuration, _configuration.label(),
-					objectDefinition, _objectEntryLocalService,
+					() -> _configuration, externalReferenceCode,
+					_configuration.label(), objectDefinition,
+					_objectEntryLocalService,
 					_userGroupLocalService),
 				HashMapDictionaryBuilder.<String, Object>put(
 					"company.id", company.getCompanyId()
@@ -148,6 +188,8 @@ public class UserGroupRecommendationsObjectRegistrar {
 
 		_serviceRegistrations.clear();
 	}
+
+	private static final String _CUSTOM_NAME_PREFIX = "C_";
 
 	private static final Log _log = LogFactoryUtil.getLog(
 		UserGroupRecommendationsObjectRegistrar.class);
