@@ -20,6 +20,7 @@ import com.liferay.portal.kernel.util.ResourceBundleUtil;
 import com.liferay.portal.kernel.util.StringUtil;
 import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
+import com.liferay.user.group.recommendations.internal.InfoPageUtil;
 import com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration;
 
 import java.util.ArrayList;
@@ -34,6 +35,7 @@ import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Modified;
 import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.metatype.annotations.Designate;
 
 /**
  * Serves a curated set of blog entries chosen per user group, so a Collection
@@ -82,6 +84,7 @@ import org.osgi.service.component.annotations.Reference;
  *
  * @author Peter Richards
  */
+@Designate(ocd = UserGroupRecommendationsConfiguration.class)
 @Component(
 	configurationPid = "com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration",
 	property = "item.class.name=com.liferay.blogs.model.BlogsEntry",
@@ -125,7 +128,7 @@ public class UserGroupRecommendationsInfoCollectionProvider
 				blogsEntries = _getFallbackBlogsEntries(serviceContext);
 			}
 
-			return _paginate(blogsEntries, pagination);
+			return InfoPageUtil.paginate(blogsEntries, pagination);
 		}
 		catch (Exception exception) {
 			_log.error(
@@ -260,21 +263,6 @@ public class UserGroupRecommendationsInfoCollectionProvider
 				WorkflowConstants.STATUS_APPROVED, 0, _FALLBACK_LIMIT, null));
 	}
 
-	private InfoPage<BlogsEntry> _paginate(
-		List<BlogsEntry> blogsEntries, Pagination pagination) {
-
-		int totalCount = blogsEntries.size();
-
-		int start = Math.min(pagination.getStart(), totalCount);
-		int end = Math.min(pagination.getEnd(), totalCount);
-
-		if (start > end) {
-			start = end;
-		}
-
-		return InfoPage.of(
-			blogsEntries.subList(start, end), pagination, totalCount);
-	}
 
 	/**
 	 * Resolves each reference as an external reference code, then a friendly

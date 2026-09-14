@@ -2,7 +2,7 @@ package com.liferay.user.group.recommendations.internal;
 
 import com.liferay.depot.util.SiteConnectedGroupGroupProviderUtil;
 import com.liferay.info.collection.provider.CollectionQuery;
-import com.liferay.info.collection.provider.SingleFormVariationInfoCollectionProvider;
+import com.liferay.info.collection.provider.InfoCollectionProvider;
 import com.liferay.info.pagination.InfoPage;
 import com.liferay.info.pagination.Pagination;
 import com.liferay.object.constants.ObjectDefinitionConstants;
@@ -46,7 +46,7 @@ import java.util.function.Supplier;
  * @author Peter Richards
  */
 public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
-	implements SingleFormVariationInfoCollectionProvider<ObjectEntry> {
+	implements InfoCollectionProvider<ObjectEntry> {
 
 	public ObjectEntryUserGroupRecommendationsInfoCollectionProvider(
 		Supplier<UserGroupRecommendationsConfiguration> configurationSupplier,
@@ -99,7 +99,7 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 					configuration, serviceContext);
 			}
 
-			return _paginate(objectEntries, pagination);
+			return InfoPageUtil.paginate(objectEntries, pagination);
 		}
 		catch (Exception exception) {
 			_log.error(
@@ -109,15 +109,6 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 
 			return InfoPage.of(Collections.emptyList(), pagination, 0);
 		}
-	}
-
-	/**
-	 * Scopes the provider to this object definition, so the page editor offers
-	 * it only where that content type is in play.
-	 */
-	@Override
-	public String getFormVariationKey() {
-		return String.valueOf(_objectDefinition.getObjectDefinitionId());
 	}
 
 	@Override
@@ -192,22 +183,6 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 
 			return new long[] {scopeGroupId};
 		}
-	}
-
-	private InfoPage<ObjectEntry> _paginate(
-		List<ObjectEntry> objectEntries, Pagination pagination) {
-
-		int totalCount = objectEntries.size();
-
-		int start = Math.min(pagination.getStart(), totalCount);
-		int end = Math.min(pagination.getEnd(), totalCount);
-
-		if (start > end) {
-			start = end;
-		}
-
-		return InfoPage.of(
-			objectEntries.subList(start, end), pagination, totalCount);
 	}
 
 	/**
