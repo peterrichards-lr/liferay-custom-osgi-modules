@@ -56,6 +56,8 @@ import org.osgi.service.component.annotations.Reference;
  *
  * @author Peter Richards
  */
+// No @Designate here: both components share one configuration PID, and bnd
+// rejects a duplicate designate for it. The declarative provider carries it.
 @Component(
 	configurationPid = "com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration",
 	service = {}
@@ -79,6 +81,17 @@ public class UserGroupRecommendationsObjectRegistrar {
 
 		if ((externalReferenceCodes == null) ||
 			(externalReferenceCodes.length == 0)) {
+
+			// Say so. This is the likeliest misconfiguration -- the bundle
+			// deployed but its .config did not -- and returning quietly made
+			// it indistinguishable from a failed lookup or an unsatisfied
+			// component, which cost real time to tell apart.
+
+			_log.info(
+				"No object definitions are configured, so no collection " +
+					"providers were registered. Set " +
+						"objectDefinitionExternalReferenceCodes to serve new " +
+							"CMS content.");
 
 			return;
 		}
@@ -197,7 +210,7 @@ public class UserGroupRecommendationsObjectRegistrar {
 					"item.class.name", objectDefinition.getClassName()
 				).build()));
 
-		if (_log.isInfoEnabled()) {
+		{
 			_log.info(
 				"Registered a user group recommendations collection provider " +
 					"for " + externalReferenceCode + " in company " +
