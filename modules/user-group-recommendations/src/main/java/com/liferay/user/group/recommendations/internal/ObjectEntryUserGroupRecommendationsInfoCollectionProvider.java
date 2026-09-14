@@ -1,9 +1,11 @@
 package com.liferay.user.group.recommendations.internal;
 
+import com.liferay.depot.util.SiteConnectedGroupGroupProviderUtil;
 import com.liferay.info.collection.provider.CollectionQuery;
 import com.liferay.info.collection.provider.SingleFormVariationInfoCollectionProvider;
 import com.liferay.info.pagination.InfoPage;
 import com.liferay.info.pagination.Pagination;
+import com.liferay.object.constants.ObjectDefinitionConstants;
 import com.liferay.object.model.ObjectDefinition;
 import com.liferay.object.model.ObjectEntry;
 import com.liferay.object.service.ObjectEntryLocalService;
@@ -17,6 +19,7 @@ import com.liferay.portal.kernel.util.Validator;
 import com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -139,9 +142,56 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 			return Collections.emptyList();
 		}
 
-		return _objectEntryLocalService.getObjectEntries(
-			serviceContext.getScopeGroupId(),
-			_objectDefinition.getObjectDefinitionId(), 0, _FALLBACK_LIMIT);
+		List<ObjectEntry> objectEntries = new ArrayList<>();
+
+		for (long groupId : _getGroupIds(serviceContext)) {
+			objectEntries.addAll(
+				_objectEntryLocalService.getObjectEntries(
+					groupId, _objectDefinition.getObjectDefinitionId(), 0,
+					_FALLBACK_LIMIT));
+
+			if (objectEntries.size() >= _FALLBACK_LIMIT) {
+				break;
+			}
+		}
+
+		return objectEntries;
+	}
+
+	/**
+	 * The groups an entry of this definition could live in.
+	 *
+	 * <p>
+	 * A definition scoped to {@code depot} stores its entries in an Asset
+	 * Library, not in the site the page belongs to, so looking only in
+	 * {@code getScopeGroupId} finds nothing. The CMS content structures are
+	 * depot-scoped by default, which makes this the normal case rather than an
+	 * edge one. Liferay's own object collection provider consults the same
+	 * helper for the same reason.
+	 * </p>
+	 */
+	private long[] _getGroupIds(ServiceContext serviceContext) {
+		long scopeGroupId = serviceContext.getScopeGroupId();
+
+		if (!Objects.equals(
+				_objectDefinition.getScope(),
+				ObjectDefinitionConstants.SCOPE_DEPOT)) {
+
+			return new long[] {scopeGroupId};
+		}
+
+		try {
+			return SiteConnectedGroupGroupProviderUtil.
+				getCurrentAndAncestorSiteAndDepotGroupIds(scopeGroupId);
+		}
+		catch (Exception exception) {
+			_log.error(
+				"Unable to resolve the asset libraries connected to group " +
+					scopeGroupId,
+				exception);
+
+			return new long[] {scopeGroupId};
+		}
 	}
 
 	private InfoPage<ObjectEntry> _paginate(
@@ -178,24 +228,32 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 	private List<ObjectEntry> _resolve(
 		Set<String> references, ServiceContext serviceContext) {
 
+		long[] groupIds = _getGroupIds(serviceContext);
+
 		List<ObjectEntry> objectEntries = new ArrayList<>(references.size());
 
-		long groupId = serviceContext.getScopeGroupId();
-
 		for (String reference : references) {
-			ObjectEntry objectEntry = _objectEntryLocalService.fetchObjectEntry(
-				reference, groupId,
-				_objectDefinition.getObjectDefinitionId());
+			ObjectEntry objectEntry = null;
 
-			if (objectEntry == null) {
-
-				// The friendly URL is the readable, portable form: it is the
-				// last segment of the entry's /w/ URL, and unlike a generated
-				// external reference code it can be written into a
-				// configuration file by hand and recognised later.
-
+			for (long groupId : groupIds) {
 				objectEntry = _objectEntryLocalService.fetchObjectEntry(
-					groupId, _objectDefinition, reference);
+					reference, groupId,
+					_objectDefinition.getObjectDefinitionId());
+
+				if (objectEntry == null) {
+
+					// The friendly URL is the readable, portable form: it is
+					// the last segment of the entry's /w/ URL, and unlike a
+					// generated external reference code it can be written into
+					// a configuration file by hand and recognised later.
+
+					objectEntry = _objectEntryLocalService.fetchObjectEntry(
+						groupId, _objectDefinition, reference);
+				}
+
+				if (objectEntry != null) {
+					break;
+				}
 			}
 
 			if ((objectEntry == null) && Validator.isNumber(reference)) {
@@ -205,8 +263,8 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 
 			if (objectEntry == null) {
 				_log.error(
-					"No " + _configuredReference + " entry in group " +
-						groupId + " matches \"" + reference +
+					"No " + _configuredReference + " entry in groups " +
+						Arrays.toString(groupIds) + " matches \"" + reference +
 							"\" as an external reference code, a friendly " +
 								"URL, or an entry id");
 
