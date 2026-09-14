@@ -1,0 +1,30 @@
+Bundle-Name: Liferay User Group Recommendations Collection Provider
+Bundle-SymbolicName: com.liferay.custom.user.group.recommendations
+
+# Ranges are hand-maintained and load-bearing. The modules compile against the
+# aggregate `release.dxp.api` jar, which carries no Export-Package header, so
+# bnd derives NO version at all rather than a wrong one -- see issue #33. Every
+# range below was read from that jar's packageinfo files for dxp-2026.q3.0 and
+# bounded to the current major, which is what bnd's consumer policy would have
+# produced had it been able to see the metadata.
+#
+# This is a per-DXP-line artifact: com.liferay.info.* and com.liferay.blogs.*
+# are application packages, not kernel, and both move majors across lines.
+Import-Package:\
+	com.liferay.blogs.model;version="[7.0,8.0)",\
+	com.liferay.blogs.service;version="[7.0,8.0)",\
+	com.liferay.info.collection.provider;version="[4.0,5.0)",\
+	com.liferay.info.field;version="[4.0,5.0)",\
+	com.liferay.info.field.type;version="[6.0,7.0)",\
+	com.liferay.info.form;version="[2.0,3.0)",\
+	com.liferay.info.localized;version="[2.0,3.0)",\
+	com.liferay.info.pagination;version="[1.0,2.0)",\
+	com.liferay.petra.string;version="[1.0,2.0)",\
+	com.liferay.portal.kernel.dao.orm;version="[18.0,19.0)",\
+	com.liferay.portal.kernel.language;version="[13.0,14.0)",\
+	com.liferay.portal.kernel.log;version="[10.0,11.0)",\
+	com.liferay.portal.kernel.model;version="[51.0,52.0)",\
+	com.liferay.portal.kernel.service;version="[54.0,55.0)",\
+	com.liferay.portal.kernel.util;version="[100.0,101.0)",\
+	com.liferay.portal.kernel.workflow;version="[27.0,28.0)",\
+	*

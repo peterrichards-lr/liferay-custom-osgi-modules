@@ -35,6 +35,7 @@ what — add yourself there when you consume or contribute one.
 | [`search-reindex`](#search-reindex) | **available** | Triggers asynchronous search reindexing for arbitrary entity classes without a published Headless or GraphQL mutation |
 | [`commerce-site-type`](#commerce-site-type) | **available** | Reads and sets a commerce channel's B2B/B2C/B2X site type, and reports allowed account types |
 | [`client-extension-entry`](#client-extension-entry) | **available** | Exposes the portlet id Liferay composes for a client extension, which no Liferay API publishes |
+| [`user-group-recommendations`](#user-group-recommendations) | **available** | Serves hand-picked blog entries per user group, as a stand-in for Analytics Cloud / LDP content recommendations |
 
 ### fragment-override
 
@@ -446,6 +447,104 @@ that the bundle resolves, that `/o/client-extension-entry/status` answers, and
 that the returned `portletId` matches the one Liferay registered, is what would
 settle it.
 
+### user-group-recommendations
+
+A **collection provider** that serves a hand-picked set of blog entries chosen
+per user group, so a Collection Display fragment shows different posts depending
+on who is logged in.
+
+This is a deliberate **stand-in for Analytics Cloud / LDP content
+recommendations**, for environments where those cannot be made to work.
+
+#### What was ruled out first
+
+Liferay already personalises collections by user segment
+([Personalizing Collections](https://learn.liferay.com/w/dxp/personalization/experiences/personalizing-collections)),
+and segment criteria include User Group membership, so the underlying use case
+is natively supported and needs no bundle at all. **If you do not need the
+substitution property described below, use the native route and do not deploy
+this module.**
+
+It was rejected here for one specific reason. Personalization produces a
+*Collection*, which the Collection Display fragment consumes from a different
+slot than a *Provider*. A Collection therefore cannot be swapped with the
+recommendation provider it is standing in for, whereas this module registers
+into the same picker slot — so switching between Plan A and Plan B is a dropdown
+change on the page rather than re-authoring it. That substitution property is
+the entire justification for the bundle.
+
+#### Configuration
+
+Nothing is compiled in. The module implements `ConfigurableInfoCollectionProvider`,
+so the mapping is configured in the **Collection Display fragment's sidebar in the
+page editor**:
+
+```
+Recommended for Your Group
+├─ User Groups
+│   ├─ Riders        [ multiselect of the site's blog entries ]
+│   └─ Engineering   [ multiselect of the site's blog entries ]
+└─ Behaviour
+    ├─ When a user belongs to several groups   first match | combine
+    └─ When a user belongs to no group         show nothing | most recent
+```
+
+The form is built **at request time** from the user groups that actually exist,
+so adding a user group adds a field with no redeploy. Fields are keyed on user
+group *id*, not name, so renaming a group in the admin UI does not orphan a
+page's configuration.
+
+Note the constraint behind the multiselect: the Info framework exposes **no field
+type for picking arbitrary content items**. The available types on 2026.q3.0 are
+categories, tags, select/multiselect option lists, and primitives. Each user
+group field is therefore a multiselect whose options are the site's approved blog
+entries, resolved when the form is built. Configured order is preserved rather
+than re-sorted, because hand-picking is about sequence.
+
+#### Behaviour
+
+- **Order** — as configured. The provider never re-sorts.
+- **Several groups** — first match by default; `combine` unions across groups,
+  de-duplicating while keeping configured order.
+- **No group, or guest** — empty by default; optionally the most recent entries.
+- **Deleted or unapproved entries** — skipped. A configuration naming an entry
+  that was later deleted degrades to a shorter list rather than erroring.
+- **No service context** — returns empty and logs, rather than throwing.
+
+#### Why `BlogsEntry` and not `AssetEntry`
+
+Blogs register a rich item-specific field set through
+`BlogsEntryInfoItemFieldValuesProvider`. Typing the collection to `AssetEntry`
+would resolve fields through the *asset* provider instead, silently dropping
+blog-specific fields such as subtitle and cover image from fragment mapping.
+Liferay types its own recommendation provider
+(`UserCommerceMLRecommendationInfoItemCollectionProvider`) to a concrete class
+for the same reason.
+
+#### Liferay versions
+
+Compiled against `dxp-2026.q3.0`, the workspace pin.
+
+This is a **per-DXP-line artifact**. It cannot be kernel-only: `com.liferay.info.*`
+and `com.liferay.blogs.*` are application packages and move majors across lines.
+Every range in `bnd.bnd` was read from the `packageinfo` files in the
+`release.dxp.api` jar for this line — see
+[#33](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/33)
+for why bnd cannot derive them itself.
+
+**Runtime verification is outstanding.** The 9 unit tests exercise selection,
+ordering, multi-group strategy, fallback and pagination with mocks, and the
+bundle resolves against the pinned distro — but neither exercises the page
+editor. Two things specifically need confirming on a live portal:
+
+1. That `getConfigurationInfoForm()` sees a populated `ServiceContextThreadLocal`.
+   It takes no arguments, so the company and scope group can only come from the
+   thread local. If it is empty there, the form renders with no user group fields
+   and the mapping would have to move to OSGi configuration instead.
+2. That a multiselect returns values in **selection** order rather than option
+   order. The provider preserves whatever order it is given; if the framework
+   normalises it, explicit ordering would need a different control.
+
 ## Building
 
 ```bash
@@ -453,6 +552,7 @@ settle it.
 ./gradlew :modules:search-reindex:build
 ./gradlew :modules:commerce-site-type:build
 ./gradlew :modules:client-extension-entry:build
+./gradlew :modules:user-group-recommendations:build
 ```
 
 The JAR lands in `modules/<module-name>/build/libs/`.
@@ -602,4 +702,4 @@ spans lines.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-07* | *Last Reviewed: 2026-09-07*
+*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*
