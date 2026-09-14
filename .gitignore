@@ -25,4 +25,7 @@
 /plugins-sdk/dist
 /plugins-sdk/lib
 test-results
-gemini.md
+
+# Transient AI agent scratchpad (git-ignored).
+# Its tracked seed lives at .agents/templates/agent-state.md and must stay committed.
+.agent-state.md
