@@ -3,6 +3,30 @@
 Single source of truth for any AI coding agent working in this repository.
 Provider-specific files redirect here; do not duplicate context into them.
 
+This file carries rules and conventions only. It holds **no status content**, so
+it should not need to change as work progresses — that lives in `.agent-state.md`.
+
+## Provider discovery
+
+Each tool finds this file by its own convention. Those entry points exist only
+to route here:
+
+| File | Provider | Mechanism |
+|---|---|---|
+| [`CLAUDE.md`](./CLAUDE.md) | Claude Code | `@AGENTS.md` **import** — expanded into context at launch |
+| [`GEMINI.md`](./GEMINI.md) | Gemini / Antigravity | redirect |
+| `.claude/`, `.cursor/`, `.gemini/`, `.windsurf/`, `.github/` | all | blade-generated Liferay rules — see below |
+
+**The import in `CLAUDE.md` is load-bearing.** A markdown link is prose an agent
+may or may not follow; `@AGENTS.md` is expanded into context at session start, so
+these rules are *loaded* rather than merely referenced. Do not downgrade it to a
+link. A symlink (`ln -s AGENTS.md CLAUDE.md`) achieves the same thing, but needs
+Administrator privileges or Developer Mode on Windows, which the import does not.
+
+Do not use `@` imports for anything else here. An import loads eagerly into every
+session whatever the task, so it is right for this one routing file and wrong for
+everything it routes to.
+
 ## What this repo is
 
 A Liferay Workspace for OSGi modules that work around **platform-level**
@@ -51,6 +75,31 @@ them as meaningful.
 - **Project-specific modules do not belong here.** They stay with their
   project; reuse happens through published artifacts.
 
+## Current work state
+
+In-flight task state — active objectives, checklists, blockers, handoff notes —
+lives exclusively in `.agent-state.md` (gitignored). Its tracked seed is
+[`.agents/templates/agent-state.md`](./.agents/templates/agent-state.md); if the
+scratchpad is missing, recreate it by copying that seed.
+
+- **On session startup**: read `.agent-state.md` to resume in-flight work
+  without losing context across a provider switch.
+- **During execution**: update it on progress, on hitting a blocker, or when
+  pausing.
+- **On completion**: clear the completed objective rather than letting it
+  accumulate.
+
+Two things must **not** go in it. Durable rules belong in this file. Anything
+that has to outlive the task belongs where a future reader will look for it —
+what a module ruled out before being written goes in its javadoc and README
+entry, per [CONTRIBUTING.md](./CONTRIBUTING.md), and outstanding work goes in a
+GitHub issue.
+
+Do not restate shipped history there either. The scratchpad this replaced was a
+completed-task log that drifted three releases stale while reading as current;
+`git log` and `gh release list` are the authority, and a file that paraphrases
+them is a file that will eventually contradict them.
+
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-04* | *Last Reviewed: 2026-09-04*
+*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*
