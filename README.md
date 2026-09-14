@@ -569,8 +569,12 @@ Recommendations*, and deploys as a file under `configs/<env>/osgi/configs/`:
 objectDefinitionExternalReferenceCodes=["MotorBlog"]
 
 objectUserGroupEntries=[\
-  "MotorBlog|Riders=ERC-SCENIC-ROUTE,ERC-SOLARA-HORIZON,ERC-SOLO-CAMPING",\
-  "MotorBlog|Engineering=ERC-SOUL-OF-SOLARA,ERC-BLUEPRINT,ERC-SOURCING"\
+  "MotorBlog|Riders=the-scenic-route-top-tips-for-mountain-pass-riding,\
+#   solara-horizon-redefining-long-distance-luxury-touring,\
+#   the-art-of-solo-moto-camping-finding-freedom-under-the-stars",\
+  "MotorBlog|Engineering=the-soul-of-solara-sculpting-performance-and-passion,\
+#   behind-the-blueprint-the-engineering-lab-at-solara-moto-gear,\
+#   sourcing-sustainably-our-path-to-carbon-neutral-manufacturing"\
 ]
 
 multiGroupStrategy="firstMatch"
@@ -602,11 +606,16 @@ Entries are served **in the order written**; the provider never re-sorts, becaus
 the point of naming them individually is that the sequence is chosen. User groups
 are matched by name, case-insensitively.
 
-**Reference entries by external reference code.** Object entries resolve by ERC
-first and numeric id only as a fallback; legacy blogs resolve by ERC, then
-friendly URL, then id. Ids differ between environments, so a configuration file
-written against one instance resolves to nothing -- or to unrelated entries -- on
-another, which is exactly what a deployable config file exists to avoid.
+**Reference entries by friendly URL.** Both providers resolve a reference as an
+external reference code, then a friendly URL, then a numeric entry id.
+
+The friendly URL is the form to use. It is the last segment of the entry's `/w/`
+URL and is chosen by whoever wrote the content, so it is legible in a
+configuration file and recognisable when reviewing one. An entry created through
+the UI gets a *generated* external reference code -- a UUID -- which is neither.
+Entry ids are accepted last and suit a single environment only: they differ
+between instances, so a file using them resolves to nothing, or to unrelated
+entries, elsewhere.
 
 An earlier revision put this mapping in the page editor via
 `ConfigurableInfoCollectionProvider`. It was withdrawn: the configuration is

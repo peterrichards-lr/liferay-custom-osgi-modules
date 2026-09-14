@@ -161,13 +161,18 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 	}
 
 	/**
-	 * Resolves each reference as an object entry external reference code, then
-	 * as a numeric entry id.
+	 * Resolves each reference as an external reference code, then as a friendly
+	 * URL, then as a numeric entry id.
 	 *
 	 * <p>
-	 * External reference codes are the portable form and the one to use: entry
-	 * ids differ between environments, so a configuration written against one
-	 * instance resolves to nothing -- or to unrelated entries -- on another.
+	 * Prefer the friendly URL. An object entry created through the UI is given a
+	 * <i>generated</i> external reference code -- a UUID -- which is neither
+	 * readable in a configuration file nor recognisable when reviewing one,
+	 * while the friendly URL is the last segment of the entry's {@code /w/} URL
+	 * and is chosen by whoever wrote the content. Entry ids are accepted last
+	 * and are a convenience for a single environment only: they differ between
+	 * instances, so a file using them resolves to nothing -- or to unrelated
+	 * entries -- elsewhere.
 	 * </p>
 	 */
 	private List<ObjectEntry> _resolve(
@@ -175,10 +180,23 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 
 		List<ObjectEntry> objectEntries = new ArrayList<>(references.size());
 
+		long groupId = serviceContext.getScopeGroupId();
+
 		for (String reference : references) {
 			ObjectEntry objectEntry = _objectEntryLocalService.fetchObjectEntry(
-				reference, serviceContext.getCompanyId(),
-				serviceContext.getScopeGroupId());
+				reference, groupId,
+				_objectDefinition.getObjectDefinitionId());
+
+			if (objectEntry == null) {
+
+				// The friendly URL is the readable, portable form: it is the
+				// last segment of the entry's /w/ URL, and unlike a generated
+				// external reference code it can be written into a
+				// configuration file by hand and recognised later.
+
+				objectEntry = _objectEntryLocalService.fetchObjectEntry(
+					groupId, _objectDefinition, reference);
+			}
 
 			if ((objectEntry == null) && Validator.isNumber(reference)) {
 				objectEntry = _objectEntryLocalService.fetchObjectEntry(
@@ -187,9 +205,10 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 
 			if (objectEntry == null) {
 				_log.error(
-					"No " + _objectDefinition.getExternalReferenceCode() +
-						" entry in group " + serviceContext.getScopeGroupId() +
-							" matches the configured reference " + reference);
+					"No " + _configuredReference + " entry in group " +
+						groupId + " matches \"" + reference +
+							"\" as an external reference code, a friendly " +
+								"URL, or an entry id");
 
 				continue;
 			}
