@@ -531,33 +531,97 @@ for it.
 A failure to resolve the current user is logged at `ERROR` against
 `com.liferay.user.group.recommendations`.
 
+#### New CMS content (objects) vs legacy Blogs
+
+The module serves **both**, through two providers:
+
+| Content | Provider | Entity |
+|---|---|---|
+| Legacy Blogs | declarative `@Component` | `BlogsEntry` |
+| New CMS content types (`L_CMS_BLOG`, or a custom type such as MotorBlog) | registered at runtime, one per definition per company | `ObjectEntry` |
+
+**Why the object one cannot be a declarative component.** An object-backed
+collection provider must register under `item.class.name =
+ObjectDefinition#getClassName()`, and for a custom object that class name
+carries a short-name suffix generated when the definition is created --
+`com.liferay.object.model.ObjectDefinition#Z7P5` and so on. It is
+instance-specific and cannot appear in an annotation. Liferay registers its own
+object collection providers programmatically for exactly this reason; see
+`ObjectDefinitionDeployerImpl`. `UserGroupRecommendationsObjectRegistrar` mirrors
+that, resolving each configured external reference code against every company at
+activation and whenever the configuration changes.
+
+> [!NOTE]
+> A definition created *after* activation is not picked up until the
+> configuration is saved again or the bundle restarts. Tracking definition
+> creation would need a model listener and considerably more lifecycle; the
+> configuration naming a definition is normally written after it exists.
+
 #### Configuration
 
-Nothing is compiled in. The module implements `ConfigurableInfoCollectionProvider`,
-so the mapping is configured in the **Collection Display fragment's sidebar in the
-page editor**:
+Nothing is compiled in. The mapping lives in OSGi configuration, at
+*Control Panel &rarr; System Settings &rarr; Content and Data &rarr; User Group
+Recommendations*, and deploys as a file under `configs/<env>/osgi/configs/`:
 
+```properties
+# com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration.config
+
+objectDefinitionExternalReferenceCodes=["MotorBlog"]
+
+objectUserGroupEntries=[\
+  "MotorBlog|Riders=the-scenic-route-top-tips-for-mountain-pass-riding,\
+#   solara-horizon-redefining-long-distance-luxury-touring,\
+#   the-art-of-solo-moto-camping-finding-freedom-under-the-stars",\
+  "MotorBlog|Engineering=the-soul-of-solara-sculpting-performance-and-passion,\
+#   behind-the-blueprint-the-engineering-lab-at-solara-moto-gear,\
+#   sourcing-sustainably-our-path-to-carbon-neutral-manufacturing"\
+]
+
+multiGroupStrategy="firstMatch"
+fallback="empty"
+label="Recommended for Your Group"
 ```
-Recommended for Your Group
-├─ User Groups
-│   ├─ Riders        [ multiselect of the site's blog entries ]
-│   └─ Engineering   [ multiselect of the site's blog entries ]
-└─ Behaviour
-    ├─ When a user belongs to several groups   first match | combine
-    └─ When a user belongs to no group         show nothing | most recent
+
+Each value is resolved as an **external reference code**, then as an object
+definition **name**, then as a name with the `C_` prefix Liferay gives custom
+definitions. So a custom content type can be named plainly:
+
+| Written in config | Matches |
+|---|---|
+| `MotorBlog` | ERC `MotorBlog`, name `MotorBlog`, or name `C_MotorBlog` |
+| `L_CMS_BLOG` | the stock CMS Blog definition, by ERC |
+
+That matters for custom types. A system definition has a legible `L_`-prefixed
+code, but one created through the UI gets a **generated** external reference
+code, and pinning a configuration file to a generated identifier is neither
+readable nor portable between environments.
+
+For legacy Blogs use `userGroupEntries` instead, without the content-type prefix:
+
+```properties
+userGroupEntries=["Riders=the-scenic-route,solara-horizon,solo-moto-camping"]
 ```
 
-The form is built **at request time** from the user groups that actually exist,
-so adding a user group adds a field with no redeploy. Fields are keyed on user
-group *id*, not name, so renaming a group in the admin UI does not orphan a
-page's configuration.
+Entries are served **in the order written**; the provider never re-sorts, because
+the point of naming them individually is that the sequence is chosen. User groups
+are matched by name, case-insensitively.
 
-Note the constraint behind the multiselect: the Info framework exposes **no field
-type for picking arbitrary content items**. The available types on 2026.q3.0 are
-categories, tags, select/multiselect option lists, and primitives. Each user
-group field is therefore a multiselect whose options are the site's approved blog
-entries, resolved when the form is built. Configured order is preserved rather
-than re-sorted, because hand-picking is about sequence.
+**Reference entries by friendly URL.** Both providers resolve a reference as an
+external reference code, then a friendly URL, then a numeric entry id.
+
+The friendly URL is the form to use. It is the last segment of the entry's `/w/`
+URL and is chosen by whoever wrote the content, so it is legible in a
+configuration file and recognisable when reviewing one. An entry created through
+the UI gets a *generated* external reference code -- a UUID -- which is neither.
+Entry ids are accepted last and suit a single environment only: they differ
+between instances, so a file using them resolves to nothing, or to unrelated
+entries, elsewhere.
+
+An earlier revision put this mapping in the page editor via
+`ConfigurableInfoCollectionProvider`. It was withdrawn: the configuration is
+stored in the page and so is lost on a site rebuild, it must be repeated for
+every placement of the fragment, and it can be neither version-controlled nor
+seeded by a deployment script.
 
 #### Behaviour
 

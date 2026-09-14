@@ -3,20 +3,11 @@ package com.liferay.user.group.recommendations;
 import com.liferay.blogs.model.BlogsEntry;
 import com.liferay.blogs.service.BlogsEntryLocalService;
 import com.liferay.info.collection.provider.CollectionQuery;
-import com.liferay.info.collection.provider.ConfigurableInfoCollectionProvider;
 import com.liferay.info.collection.provider.InfoCollectionProvider;
-import com.liferay.info.field.InfoField;
-import com.liferay.info.field.InfoFieldSet;
-import com.liferay.info.field.type.MultiselectInfoFieldType;
-import com.liferay.info.field.type.OptionInfoFieldType;
-import com.liferay.info.field.type.SelectInfoFieldType;
-import com.liferay.info.form.InfoForm;
-import com.liferay.info.localized.InfoLocalizedValue;
 import com.liferay.info.pagination.InfoPage;
 import com.liferay.info.pagination.Pagination;
-import com.liferay.petra.string.StringPool;
+import com.liferay.portal.configuration.metatype.bnd.util.ConfigurableUtil;
 import com.liferay.portal.kernel.dao.orm.QueryDefinition;
-import com.liferay.portal.kernel.dao.orm.QueryUtil;
 import com.liferay.portal.kernel.language.Language;
 import com.liferay.portal.kernel.log.Log;
 import com.liferay.portal.kernel.log.LogFactoryUtil;
@@ -25,9 +16,11 @@ import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
 import com.liferay.portal.kernel.service.UserGroupLocalService;
 import com.liferay.portal.kernel.util.GetterUtil;
-import com.liferay.portal.kernel.util.ListUtil;
 import com.liferay.portal.kernel.util.ResourceBundleUtil;
+import com.liferay.portal.kernel.util.StringUtil;
+import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
+import com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,38 +30,49 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Modified;
 import org.osgi.service.component.annotations.Reference;
 
 /**
- * Serves a hand-picked set of blog entries chosen per user group, so a
- * Collection Display fragment shows different posts depending on who is
- * looking.
+ * Serves a curated set of blog entries chosen per user group, so a Collection
+ * Display fragment shows different posts depending on who is looking.
  *
  * <p>
- * <b>Why this exists.</b> This is a deliberate stand-in for Analytics Cloud /
- * LDP content recommendations, for environments where those cannot be made to
- * work. It is registered as a collection <i>provider</i> rather than shipped as
- * a Collection precisely so that it occupies the same slot in the Collection
+ * <b>Why this exists.</b> A deliberate stand-in for Analytics Cloud / LDP
+ * content recommendations, for environments where those cannot be made to work.
+ * It is registered as a collection <i>provider</i> rather than shipped as a
+ * Collection precisely so that it occupies the same slot in the Collection
  * Display fragment's picker as the recommendation provider it substitutes for:
  * switching between the two is then a dropdown change on the page rather than
- * re-authoring the page.
+ * re-authoring it.
  * </p>
  *
  * <p>
  * <b>What was ruled out first.</b> Liferay already personalises collections by
- * user segment ("Add Personalized Variation"), and segment criteria include
- * User Group membership, so the underlying use case is natively supported and
- * needs no bundle. That route was rejected here for one specific reason: it
- * produces a <i>Collection</i>, which the fragment consumes from a different
- * slot than a <i>Provider</i>, and so cannot be swapped with a recommendation
- * provider. It also requires Segments. Where swappability does not matter,
- * prefer the native route and do not deploy this.
+ * user segment, and segment criteria include User Group membership, so the
+ * underlying use case is natively supported and needs no bundle. That route was
+ * rejected only because it produces a Collection, which the fragment consumes
+ * from a different slot than a Provider, and so cannot be substituted for a
+ * recommendation provider. Where swappability does not matter, prefer the
+ * native route and do not deploy this.
  * </p>
  *
  * <p>
- * <b>Why {@code BlogsEntry} rather than {@code AssetEntry}.</b> Blogs register
- * a rich item-specific field set through
+ * <b>Why the mapping is in OSGi configuration.</b> An earlier revision
+ * implemented {@code ConfigurableInfoCollectionProvider} and built the mapping
+ * as a form in the page editor. That was withdrawn after it proved
+ * undiscoverable in use, and for three reasons that stand regardless: the
+ * configuration is stored in the page and so is lost on a site rebuild, it must
+ * be repeated for every placement of the fragment, and it can be neither
+ * version-controlled nor seeded by a deployment script. See
+ * {@link UserGroupRecommendationsConfiguration}.
+ * </p>
+ *
+ * <p>
+ * <b>Why {@code BlogsEntry} rather than {@code AssetEntry}.</b> Blogs register a
+ * rich item-specific field set through
  * {@code BlogsEntryInfoItemFieldValuesProvider}. Typing the collection to
  * {@code AssetEntry} would resolve fields through the asset provider instead,
  * silently dropping blog-specific fields such as subtitle and cover image from
@@ -76,42 +80,21 @@ import org.osgi.service.component.annotations.Reference;
  * class for the same reason.
  * </p>
  *
- * <p>
- * <b>Configuration.</b> The mapping is not compiled in. The provider implements
- * {@link ConfigurableInfoCollectionProvider}, and the form is built at request
- * time from the user groups that actually exist, so adding a user group adds a
- * field with no redeploy. Note that the Info framework exposes no field type
- * for picking arbitrary content items -- the available types cover categories,
- * tags and fixed option lists only -- so each field is a multiselect whose
- * options are the site's blog entries, resolved when the form is built.
- * </p>
- *
  * @author Peter Richards
  */
 @Component(
+	configurationPid = "com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration",
 	property = "item.class.name=com.liferay.blogs.model.BlogsEntry",
 	service = InfoCollectionProvider.class
 )
 public class UserGroupRecommendationsInfoCollectionProvider
-	implements ConfigurableInfoCollectionProvider<BlogsEntry> {
-
-	public static final String KEY = "userGroupRecommendations";
-
-	/**
-	 * Prefix for the per-user-group configuration fields. The user group id is
-	 * appended, rather than the name, so renaming a user group in the admin UI
-	 * does not silently orphan a page's configuration.
-	 */
-	public static final String USER_GROUP_FIELD_PREFIX = "userGroupId--";
-
-	public static final String FIELD_FALLBACK = "fallback";
-
-	public static final String FIELD_MULTI_GROUP_STRATEGY =
-		"multiGroupStrategy";
+	implements InfoCollectionProvider<BlogsEntry> {
 
 	public static final String FALLBACK_EMPTY = "empty";
 
 	public static final String FALLBACK_RECENT = "recent";
+
+	public static final String KEY = "userGroupRecommendations";
 
 	public static final String STRATEGY_FIRST_MATCH = "firstMatch";
 
@@ -129,22 +112,17 @@ public class UserGroupRecommendationsInfoCollectionProvider
 
 			if (serviceContext == null) {
 				_log.error(
-					"Unable to resolve a service context, so the current user " +
-						"cannot be determined");
+					"Unable to resolve a service context, so the current " +
+						"user cannot be determined");
 
-				return InfoPage.of(
-					Collections.emptyList(), pagination, 0);
+				return InfoPage.of(Collections.emptyList(), pagination, 0);
 			}
 
-			Map<String, String[]> configuration =
-				collectionQuery.getConfiguration();
-
 			List<BlogsEntry> blogsEntries = _getConfiguredBlogsEntries(
-				configuration, serviceContext);
+				serviceContext);
 
 			if (blogsEntries.isEmpty()) {
-				blogsEntries = _getFallbackBlogsEntries(
-					configuration, serviceContext);
+				blogsEntries = _getFallbackBlogsEntries(serviceContext);
 			}
 
 			return _paginate(blogsEntries, pagination);
@@ -158,73 +136,6 @@ public class UserGroupRecommendationsInfoCollectionProvider
 	}
 
 	@Override
-	public InfoForm getConfigurationInfoForm() {
-		InfoFieldSet.Builder userGroupsBuilder = InfoFieldSet.builder();
-
-		for (UserGroup userGroup : _getUserGroups()) {
-			userGroupsBuilder.infoFieldSetEntry(
-				InfoField.builder(
-				).infoFieldType(
-					MultiselectInfoFieldType.INSTANCE
-				).namespace(
-					StringPool.BLANK
-				).name(
-					USER_GROUP_FIELD_PREFIX + userGroup.getUserGroupId()
-				).attribute(
-					MultiselectInfoFieldType.OPTIONS, _getBlogsEntryOptions()
-				).labelInfoLocalizedValue(
-					InfoLocalizedValue.singleValue(userGroup.getName())
-				).localizable(
-					false
-				).build());
-		}
-
-		return InfoForm.builder(
-		).infoFieldSetEntry(
-			userGroupsBuilder.descriptionInfoLocalizedValue(
-				InfoLocalizedValue.localize(
-					getClass(),
-					"choose-the-entries-each-user-group-should-be-shown")
-			).labelInfoLocalizedValue(
-				InfoLocalizedValue.localize(getClass(), "user-groups")
-			).name(
-				"userGroups"
-			).build()
-		).infoFieldSetEntry(
-			InfoFieldSet.builder(
-			).infoFieldSetEntry(
-				_buildSelectInfoField(
-					FIELD_MULTI_GROUP_STRATEGY, "when-a-user-matches-several",
-					new OptionInfoFieldType(
-						true,
-						InfoLocalizedValue.localize(
-							getClass(), "use-the-first-matching-user-group"),
-						STRATEGY_FIRST_MATCH),
-					new OptionInfoFieldType(
-						InfoLocalizedValue.localize(
-							getClass(), "combine-every-matching-user-group"),
-						STRATEGY_UNION))
-			).infoFieldSetEntry(
-				_buildSelectInfoField(
-					FIELD_FALLBACK, "when-a-user-matches-none",
-					new OptionInfoFieldType(
-						true,
-						InfoLocalizedValue.localize(
-							getClass(), "show-nothing"),
-						FALLBACK_EMPTY),
-					new OptionInfoFieldType(
-						InfoLocalizedValue.localize(
-							getClass(), "show-the-most-recent-entries"),
-						FALLBACK_RECENT))
-			).labelInfoLocalizedValue(
-				InfoLocalizedValue.localize(getClass(), "behaviour")
-			).name(
-				"behaviour"
-			).build()
-		).build();
-	}
-
-	@Override
 	public String getKey() {
 		return KEY;
 	}
@@ -232,66 +143,37 @@ public class UserGroupRecommendationsInfoCollectionProvider
 	@Override
 	public String getLabel(Locale locale) {
 		return _language.get(
-			ResourceBundleUtil.getBundle("content.Language", locale, getClass()),
+			ResourceBundleUtil.getBundle(
+				"content.Language", locale, getClass()),
 			"recommended-for-your-group");
 	}
 
-	private InfoField<SelectInfoFieldType> _buildSelectInfoField(
-		String name, String labelKey, OptionInfoFieldType... options) {
-
-		return InfoField.builder(
-		).infoFieldType(
-			SelectInfoFieldType.INSTANCE
-		).namespace(
-			StringPool.BLANK
-		).name(
-			name
-		).attribute(
-			SelectInfoFieldType.INLINE, true
-		).attribute(
-			SelectInfoFieldType.OPTIONS, ListUtil.fromArray(options)
-		).labelInfoLocalizedValue(
-			InfoLocalizedValue.localize(getClass(), labelKey)
-		).localizable(
-			true
-		).build();
-	}
-
-	private List<OptionInfoFieldType> _getBlogsEntryOptions() {
-		ServiceContext serviceContext =
-			ServiceContextThreadLocal.getServiceContext();
-
-		if (serviceContext == null) {
-			return Collections.emptyList();
-		}
-
-		List<OptionInfoFieldType> options = new ArrayList<>();
-
-		for (BlogsEntry blogsEntry :
-				_blogsEntryLocalService.getGroupEntries(
-					serviceContext.getScopeGroupId(),
-					new QueryDefinition<>(
-						WorkflowConstants.STATUS_APPROVED, QueryUtil.ALL_POS,
-						QueryUtil.ALL_POS, null))) {
-
-			options.add(
-				new OptionInfoFieldType(
-					InfoLocalizedValue.singleValue(blogsEntry.getTitle()),
-					String.valueOf(blogsEntry.getEntryId())));
-		}
-
-		return options;
+	@Activate
+	@Modified
+	protected void activate(Map<String, Object> properties) {
+		_configuration = ConfigurableUtil.createConfigurable(
+			UserGroupRecommendationsConfiguration.class, properties);
 	}
 
 	/**
 	 * Resolves the entries configured for the groups the current user belongs
-	 * to. Configured order is preserved deliberately: the point of hand-picking
-	 * is that the sequence is chosen, so it must not be re-sorted here.
+	 * to.
+	 *
+	 * <p>
+	 * Configuration order is authoritative, not the order
+	 * {@code getUserUserGroups} happens to return: the configured lines are
+	 * walked in the order they are written, and a line is used only if the user
+	 * belongs to that group. That makes {@code firstMatch} mean "the first group
+	 * listed in configuration", which an administrator can see and control,
+	 * rather than whatever the service returns first.
+	 * </p>
 	 */
 	private List<BlogsEntry> _getConfiguredBlogsEntries(
-		Map<String, String[]> configuration, ServiceContext serviceContext) {
+		ServiceContext serviceContext) {
 
-		if ((configuration == null) || configuration.isEmpty()) {
+		String[] userGroupEntries = _configuration.userGroupEntries();
+
+		if ((userGroupEntries == null) || (userGroupEntries.length == 0)) {
 			return Collections.emptyList();
 		}
 
@@ -301,33 +183,56 @@ public class UserGroupRecommendationsInfoCollectionProvider
 			return Collections.emptyList();
 		}
 
-		boolean union = STRATEGY_UNION.equals(
-			_getSingleValue(
-				configuration, FIELD_MULTI_GROUP_STRATEGY,
-				STRATEGY_FIRST_MATCH));
-
-		// A LinkedHashSet so that a union across groups keeps configured order
-		// and does not show the same entry twice.
-
-		Set<Long> entryIds = new LinkedHashSet<>();
+		Set<String> userGroupNames = new LinkedHashSet<>();
 
 		for (UserGroup userGroup :
 				_userGroupLocalService.getUserUserGroups(userId)) {
 
-			String[] configuredEntryIds = configuration.get(
-				USER_GROUP_FIELD_PREFIX + userGroup.getUserGroupId());
+			userGroupNames.add(StringUtil.toLowerCase(userGroup.getName()));
+		}
 
-			if ((configuredEntryIds == null) ||
-				(configuredEntryIds.length == 0)) {
+		if (userGroupNames.isEmpty()) {
+			return Collections.emptyList();
+		}
+
+		boolean union = STRATEGY_UNION.equals(
+			GetterUtil.getString(
+				_configuration.multiGroupStrategy(), STRATEGY_FIRST_MATCH));
+
+		// A LinkedHashSet so a union keeps configured order and never repeats
+		// an entry that two groups both name.
+
+		Set<String> references = new LinkedHashSet<>();
+
+		for (String userGroupEntry : userGroupEntries) {
+			if (Validator.isNull(userGroupEntry)) {
+				continue;
+			}
+
+			int index = userGroupEntry.indexOf('=');
+
+			if (index <= 0) {
+				_log.error(
+					"Ignoring malformed configuration line, expected " +
+						"<user group name>=<ref>,<ref>: " + userGroupEntry);
 
 				continue;
 			}
 
-			for (String configuredEntryId : configuredEntryIds) {
-				long entryId = GetterUtil.getLong(configuredEntryId);
+			String userGroupName = StringUtil.toLowerCase(
+				userGroupEntry.substring(0, index).trim());
 
-				if (entryId > 0) {
-					entryIds.add(entryId);
+			if (!userGroupNames.contains(userGroupName)) {
+				continue;
+			}
+
+			for (String reference :
+					userGroupEntry.substring(index + 1).split(",")) {
+
+				reference = reference.trim();
+
+				if (!reference.isEmpty()) {
+					references.add(reference);
 				}
 			}
 
@@ -336,14 +241,14 @@ public class UserGroupRecommendationsInfoCollectionProvider
 			}
 		}
 
-		return _resolve(entryIds);
+		return _resolve(references, serviceContext.getScopeGroupId());
 	}
 
 	private List<BlogsEntry> _getFallbackBlogsEntries(
-		Map<String, String[]> configuration, ServiceContext serviceContext) {
+		ServiceContext serviceContext) {
 
-		String fallback = _getSingleValue(
-			configuration, FIELD_FALLBACK, FALLBACK_EMPTY);
+		String fallback = GetterUtil.getString(
+			_configuration.fallback(), FALLBACK_EMPTY);
 
 		if (!FALLBACK_RECENT.equals(fallback)) {
 			return Collections.emptyList();
@@ -353,42 +258,6 @@ public class UserGroupRecommendationsInfoCollectionProvider
 			serviceContext.getScopeGroupId(),
 			new QueryDefinition<>(
 				WorkflowConstants.STATUS_APPROVED, 0, _FALLBACK_LIMIT, null));
-	}
-
-	private String _getSingleValue(
-		Map<String, String[]> configuration, String name, String defaultValue) {
-
-		if (configuration == null) {
-			return defaultValue;
-		}
-
-		String[] values = configuration.get(name);
-
-		if ((values == null) || (values.length == 0)) {
-			return defaultValue;
-		}
-
-		return GetterUtil.getString(values[0], defaultValue);
-	}
-
-	private List<UserGroup> _getUserGroups() {
-		ServiceContext serviceContext =
-			ServiceContextThreadLocal.getServiceContext();
-
-		if (serviceContext == null) {
-			// getConfigurationInfoForm takes no arguments, so the company can
-			// only come from the thread local. If it is absent the form is
-			// rendered empty rather than guessing at a company id.
-
-			_log.error(
-				"Unable to resolve a service context, so no user group " +
-					"fields can be built");
-
-			return Collections.emptyList();
-		}
-
-		return _userGroupLocalService.getUserGroups(
-			serviceContext.getCompanyId());
 	}
 
 	private InfoPage<BlogsEntry> _paginate(
@@ -408,22 +277,54 @@ public class UserGroupRecommendationsInfoCollectionProvider
 	}
 
 	/**
-	 * Skips entries that no longer resolve or are no longer approved, rather
-	 * than surfacing a null into the fragment. A configuration naming a deleted
-	 * entry should degrade to a shorter list, not to an error.
+	 * Resolves each reference as an external reference code, then a friendly
+	 * URL, then a numeric entry id.
+	 *
+	 * <p>
+	 * The numeric form is last and is a convenience only. Entry ids differ
+	 * between environments, so a configuration file written against one
+	 * instance resolves to nothing -- or to unrelated entries -- on another,
+	 * which is exactly the failure a deployable config file exists to avoid.
+	 * </p>
+	 *
+	 * <p>
+	 * Entries that no longer resolve, or are no longer approved, are skipped
+	 * rather than surfaced as nulls: a configuration naming a deleted entry
+	 * should degrade to a shorter list, not to an error. An unresolvable
+	 * reference is logged, because that one is almost always a typo.
+	 * </p>
 	 */
-	private List<BlogsEntry> _resolve(Set<Long> entryIds) {
-		List<BlogsEntry> blogsEntries = new ArrayList<>(entryIds.size());
+	private List<BlogsEntry> _resolve(Set<String> references, long groupId) {
+		List<BlogsEntry> blogsEntries = new ArrayList<>(references.size());
 
-		for (Long entryId : entryIds) {
-			BlogsEntry blogsEntry = _blogsEntryLocalService.fetchBlogsEntry(
-				entryId);
+		for (String reference : references) {
+			BlogsEntry blogsEntry =
+				_blogsEntryLocalService.fetchBlogsEntryByExternalReferenceCode(
+					reference, groupId);
 
-			if ((blogsEntry != null) &&
-				(blogsEntry.getStatus() == WorkflowConstants.STATUS_APPROVED)) {
-
-				blogsEntries.add(blogsEntry);
+			if (blogsEntry == null) {
+				blogsEntry = _blogsEntryLocalService.fetchEntry(
+					groupId, reference);
 			}
+
+			if ((blogsEntry == null) && Validator.isNumber(reference)) {
+				blogsEntry = _blogsEntryLocalService.fetchBlogsEntry(
+					GetterUtil.getLong(reference));
+			}
+
+			if (blogsEntry == null) {
+				_log.error(
+					"No blog entry in group " + groupId +
+						" matches the configured reference " + reference);
+
+				continue;
+			}
+
+			if (blogsEntry.getStatus() != WorkflowConstants.STATUS_APPROVED) {
+				continue;
+			}
+
+			blogsEntries.add(blogsEntry);
 		}
 
 		return blogsEntries;
@@ -436,6 +337,8 @@ public class UserGroupRecommendationsInfoCollectionProvider
 
 	@Reference
 	private BlogsEntryLocalService _blogsEntryLocalService;
+
+	private volatile UserGroupRecommendationsConfiguration _configuration;
 
 	@Reference
 	private Language _language;

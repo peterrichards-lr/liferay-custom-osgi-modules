@@ -12,6 +12,7 @@ import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
 import com.liferay.portal.kernel.service.UserGroupLocalService;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
+import com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration;
 
 import java.lang.reflect.Field;
 
@@ -49,12 +50,29 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 			_userGroupLocalService);
 		_setField(_infoCollectionProvider, "_language", _language);
 
-		_entries = new HashMap<>();
+		_byUrlTitle = new HashMap<>();
+		_byExternalReferenceCode = new HashMap<>();
+		_byEntryId = new HashMap<>();
+
+		Mockito.when(
+			_blogsEntryLocalService.fetchEntry(
+				Mockito.anyLong(), Mockito.anyString())
+		).thenAnswer(
+			invocation -> _byUrlTitle.get(invocation.getArgument(1))
+		);
+
+		Mockito.when(
+			_blogsEntryLocalService.fetchBlogsEntryByExternalReferenceCode(
+				Mockito.anyString(), Mockito.anyLong())
+		).thenAnswer(
+			invocation -> _byExternalReferenceCode.get(
+				invocation.getArgument(0))
+		);
 
 		Mockito.when(
 			_blogsEntryLocalService.fetchBlogsEntry(Mockito.anyLong())
 		).thenAnswer(
-			invocation -> _entries.get(invocation.getArgument(0))
+			invocation -> _byEntryId.get(invocation.getArgument(0))
 		);
 	}
 
@@ -64,86 +82,93 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 	}
 
 	@Test
-	public void testConfiguredOrderIsPreserved() {
+	public void testConfiguredOrderIsPreserved() throws Exception {
 		_pushServiceContext(_USER_ID);
-		_givenUserGroups(_GROUP_A);
-		_givenEntries(10L, 11L, 12L);
+		_givenUserGroups("Riders");
+		_givenEntries("alpha", "beta", "gamma");
 
-		// Deliberately not ascending: hand-picking is about sequence, so the
+		// Deliberately not alphabetical: hand-picking is about sequence, so the
 		// provider must not re-sort.
 
-		InfoPage<BlogsEntry> infoPage = _getCollectionInfoPage(
-			_configuration("12", "10", "11"));
+		_configure("Riders=gamma,alpha,beta");
 
-		Assert.assertEquals(Arrays.asList(12L, 10L, 11L), _entryIds(infoPage));
+		Assert.assertEquals(
+			Arrays.asList("gamma", "alpha", "beta"),
+			_urlTitles(_getCollectionInfoPage()));
 	}
 
 	@Test
-	public void testFallbackEmptyWhenUserMatchesNoGroup() {
-		_pushServiceContext(_USER_ID);
-		_givenUserGroups();
+	public void testFallbackEmptyWhenUserMatchesNoConfiguredGroup()
+		throws Exception {
 
-		InfoPage<BlogsEntry> infoPage = _getCollectionInfoPage(
-			_configuration("10"));
+		_pushServiceContext(_USER_ID);
+		_givenUserGroups("Marketing");
+		_givenEntries("alpha");
+
+		_configure("Riders=alpha");
+
+		InfoPage<BlogsEntry> infoPage = _getCollectionInfoPage();
 
 		Assert.assertTrue(infoPage.getPageItems().isEmpty());
 		Assert.assertEquals(0, infoPage.getTotalCount());
 	}
 
 	@Test
-	public void testFallbackRecentWhenUserMatchesNoGroup() {
+	public void testFallbackRecent() throws Exception {
 		_pushServiceContext(_USER_ID);
-		_givenUserGroups();
-		_givenEntries(90L, 91L);
+		_givenUserGroups("Marketing");
+		_givenEntries("recent-one", "recent-two");
 
 		Mockito.when(
 			_blogsEntryLocalService.getGroupEntries(
 				Mockito.anyLong(), Mockito.<QueryDefinition<BlogsEntry>>any())
 		).thenReturn(
-			new ArrayList<>(Arrays.asList(_entries.get(90L), _entries.get(91L)))
+			new ArrayList<>(
+				Arrays.asList(
+					_byUrlTitle.get("recent-one"),
+					_byUrlTitle.get("recent-two")))
 		);
 
-		Map<String, String[]> configuration = _configuration("10");
-
-		configuration.put(
-			UserGroupRecommendationsInfoCollectionProvider.FIELD_FALLBACK,
-			new String[] {
-				UserGroupRecommendationsInfoCollectionProvider.FALLBACK_RECENT
-			});
-
-		InfoPage<BlogsEntry> infoPage = _getCollectionInfoPage(configuration);
+		_configureWith(
+			UserGroupRecommendationsInfoCollectionProvider.
+				STRATEGY_FIRST_MATCH,
+			UserGroupRecommendationsInfoCollectionProvider.FALLBACK_RECENT,
+			"Riders=alpha");
 
 		Assert.assertEquals(
-			Arrays.asList(90L, 91L), _entryIds(infoPage));
+			Arrays.asList("recent-one", "recent-two"),
+			_urlTitles(_getCollectionInfoPage()));
 	}
 
 	@Test
-	public void testFirstMatchUsesOnlyTheFirstMatchingGroup() {
+	public void testFirstMatchFollowsConfigurationOrderNotServiceOrder()
+		throws Exception {
+
 		_pushServiceContext(_USER_ID);
-		_givenUserGroups(_GROUP_A, _GROUP_B);
-		_givenEntries(10L, 11L, 20L, 21L);
 
-		Map<String, String[]> configuration = _configuration("10", "11");
+		// The service returns Engineering first; configuration lists Riders
+		// first. Configuration must win, because that is the order an
+		// administrator can see.
 
-		configuration.put(
-			UserGroupRecommendationsInfoCollectionProvider.
-				USER_GROUP_FIELD_PREFIX + _GROUP_B,
-			new String[] {"20", "21"});
+		_givenUserGroups("Engineering", "Riders");
+		_givenEntries("alpha", "beta", "gamma");
 
-		InfoPage<BlogsEntry> infoPage = _getCollectionInfoPage(configuration);
+		_configure("Riders=alpha,beta", "Engineering=gamma");
 
-		Assert.assertEquals(Arrays.asList(10L, 11L), _entryIds(infoPage));
+		Assert.assertEquals(
+			Arrays.asList("alpha", "beta"),
+			_urlTitles(_getCollectionInfoPage()));
 	}
 
 	@Test
-	public void testGuestFallsBackRatherThanThrowing() {
+	public void testGuestReturnsEmptyWithoutConsultingUserGroups()
+		throws Exception {
+
 		_pushServiceContext(0);
-		_givenUserGroups(_GROUP_A);
+		_configure("Riders=alpha");
 
-		InfoPage<BlogsEntry> infoPage = _getCollectionInfoPage(
-			_configuration("10"));
-
-		Assert.assertTrue(infoPage.getPageItems().isEmpty());
+		Assert.assertTrue(
+			_getCollectionInfoPage().getPageItems().isEmpty());
 
 		Mockito.verify(
 			_userGroupLocalService, Mockito.never()
@@ -153,37 +178,43 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 	}
 
 	@Test
-	public void testKeyAndLabel() {
-		Mockito.when(
-			_language.get(Mockito.<java.util.ResourceBundle>any(), Mockito.anyString())
-		).thenReturn(
-			"Recommended for Your Group"
-		);
+	public void testMalformedConfigurationLineIsSkipped() throws Exception {
+		_pushServiceContext(_USER_ID);
+		_givenUserGroups("Riders");
+		_givenEntries("alpha");
+
+		_configure("this line has no equals sign", "Riders=alpha");
 
 		Assert.assertEquals(
-			"userGroupRecommendations", _infoCollectionProvider.getKey());
+			Arrays.asList("alpha"), _urlTitles(_getCollectionInfoPage()));
 	}
 
 	@Test
-	public void testMissingServiceContextReturnsEmptyRatherThanThrowing() {
+	public void testMissingServiceContextReturnsEmptyRatherThanThrowing()
+		throws Exception {
+
 		ServiceContextThreadLocal.remove();
 
-		InfoPage<BlogsEntry> infoPage = _getCollectionInfoPage(
-			_configuration("10"));
+		_configure("Riders=alpha");
+
+		InfoPage<BlogsEntry> infoPage = _getCollectionInfoPage();
 
 		Assert.assertTrue(infoPage.getPageItems().isEmpty());
 		Assert.assertEquals(0, infoPage.getTotalCount());
 	}
 
 	@Test
-	public void testPaginationSlicesWithoutLosingTotalCount() {
+	public void testPaginationSlicesWithoutLosingTotalCount()
+		throws Exception {
+
 		_pushServiceContext(_USER_ID);
-		_givenUserGroups(_GROUP_A);
-		_givenEntries(10L, 11L, 12L);
+		_givenUserGroups("Riders");
+		_givenEntries("alpha", "beta", "gamma");
+
+		_configure("Riders=alpha,beta,gamma");
 
 		CollectionQuery collectionQuery = new CollectionQuery();
 
-		collectionQuery.setConfiguration(_configuration("10", "11", "12"));
 		collectionQuery.setPagination(Pagination.of(2, 0));
 
 		InfoPage<BlogsEntry> infoPage =
@@ -194,110 +225,141 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 	}
 
 	@Test
-	public void testUnapprovedAndDeletedEntriesAreSkipped() {
+	public void testReferenceResolvesByExternalReferenceCodeThenUrlTitleThenId()
+		throws Exception {
+
 		_pushServiceContext(_USER_ID);
-		_givenUserGroups(_GROUP_A);
-		_givenEntries(10L, 12L);
+		_givenUserGroups("Riders");
 
-		BlogsEntry draftBlogsEntry = Mockito.mock(BlogsEntry.class);
+		BlogsEntry byErc = _entry("by-erc");
 
-		Mockito.when(draftBlogsEntry.getEntryId()).thenReturn(11L);
+		_byExternalReferenceCode.put("ERC-1", byErc);
+
+		_givenEntries("by-url-title");
+
+		BlogsEntry byId = _entry("by-id");
+
+		_byEntryId.put(4242L, byId);
+
+		_configure("Riders=ERC-1,by-url-title,4242");
+
+		Assert.assertEquals(
+			Arrays.asList("by-erc", "by-url-title", "by-id"),
+			_urlTitles(_getCollectionInfoPage()));
+	}
+
+	@Test
+	public void testUnionCombinesAndDeduplicatesInConfigurationOrder()
+		throws Exception {
+
+		_pushServiceContext(_USER_ID);
+		_givenUserGroups("Riders", "Engineering");
+		_givenEntries("alpha", "beta", "gamma");
+
+		_configureWith(
+			UserGroupRecommendationsInfoCollectionProvider.STRATEGY_UNION,
+			UserGroupRecommendationsInfoCollectionProvider.FALLBACK_EMPTY,
+			"Riders=alpha,beta", "Engineering=beta,gamma");
+
+		Assert.assertEquals(
+			Arrays.asList("alpha", "beta", "gamma"),
+			_urlTitles(_getCollectionInfoPage()));
+	}
+
+	@Test
+	public void testUnresolvableAndUnapprovedReferencesAreSkipped()
+		throws Exception {
+
+		_pushServiceContext(_USER_ID);
+		_givenUserGroups("Riders");
+		_givenEntries("alpha", "gamma");
+
+		BlogsEntry draft = Mockito.mock(BlogsEntry.class);
+
+		Mockito.when(draft.getUrlTitle()).thenReturn("draft");
 		Mockito.when(
-			draftBlogsEntry.getStatus()
+			draft.getStatus()
 		).thenReturn(
 			WorkflowConstants.STATUS_DRAFT
 		);
 
-		_entries.put(11L, draftBlogsEntry);
+		_byUrlTitle.put("draft", draft);
 
-		// 99 resolves to null, standing in for an entry deleted after the page
-		// was configured.
+		// "ghost" resolves to nothing, standing in for an entry deleted after
+		// the configuration was written.
 
-		InfoPage<BlogsEntry> infoPage = _getCollectionInfoPage(
-			_configuration("10", "11", "99", "12"));
+		_configure("Riders=alpha,draft,ghost,gamma");
 
-		Assert.assertEquals(Arrays.asList(10L, 12L), _entryIds(infoPage));
+		Assert.assertEquals(
+			Arrays.asList("alpha", "gamma"),
+			_urlTitles(_getCollectionInfoPage()));
 	}
 
 	@Test
-	public void testUnionCombinesAndDeduplicatesAcrossGroups() {
+	public void testUserGroupNameMatchingIsCaseInsensitive() throws Exception {
 		_pushServiceContext(_USER_ID);
-		_givenUserGroups(_GROUP_A, _GROUP_B);
-		_givenEntries(10L, 11L, 20L);
+		_givenUserGroups("Riders");
+		_givenEntries("alpha");
 
-		Map<String, String[]> configuration = _configuration("10", "11");
-
-		configuration.put(
-			UserGroupRecommendationsInfoCollectionProvider.
-				USER_GROUP_FIELD_PREFIX + _GROUP_B,
-			new String[] {"11", "20"});
-		configuration.put(
-			UserGroupRecommendationsInfoCollectionProvider.
-				FIELD_MULTI_GROUP_STRATEGY,
-			new String[] {
-				UserGroupRecommendationsInfoCollectionProvider.STRATEGY_UNION
-			});
-
-		InfoPage<BlogsEntry> infoPage = _getCollectionInfoPage(configuration);
+		_configure("riders=alpha");
 
 		Assert.assertEquals(
-			Arrays.asList(10L, 11L, 20L), _entryIds(infoPage));
+			Arrays.asList("alpha"), _urlTitles(_getCollectionInfoPage()));
 	}
 
-	private Map<String, String[]> _configuration(String... groupAEntryIds) {
-		Map<String, String[]> configuration = new HashMap<>();
-
-		configuration.put(
+	private void _configure(String... userGroupEntries) throws Exception {
+		_configureWith(
 			UserGroupRecommendationsInfoCollectionProvider.
-				USER_GROUP_FIELD_PREFIX + _GROUP_A,
-			groupAEntryIds);
-
-		return configuration;
+				STRATEGY_FIRST_MATCH,
+			UserGroupRecommendationsInfoCollectionProvider.FALLBACK_EMPTY,
+			userGroupEntries);
 	}
 
-	private List<Long> _entryIds(InfoPage<BlogsEntry> infoPage) {
-		List<Long> entryIds = new ArrayList<>();
+	private void _configureWith(
+			String multiGroupStrategy, String fallback,
+			String... userGroupEntries)
+		throws Exception {
 
-		for (BlogsEntry blogsEntry : infoPage.getPageItems()) {
-			entryIds.add(blogsEntry.getEntryId());
-		}
-
-		return entryIds;
+		_setField(
+			_infoCollectionProvider, "_configuration",
+			new StubConfiguration(
+				userGroupEntries, multiGroupStrategy, fallback));
 	}
 
-	private InfoPage<BlogsEntry> _getCollectionInfoPage(
-		Map<String, String[]> configuration) {
+	private BlogsEntry _entry(String urlTitle) {
+		BlogsEntry blogsEntry = Mockito.mock(BlogsEntry.class);
 
+		Mockito.when(blogsEntry.getUrlTitle()).thenReturn(urlTitle);
+		Mockito.when(
+			blogsEntry.getStatus()
+		).thenReturn(
+			WorkflowConstants.STATUS_APPROVED
+		);
+
+		return blogsEntry;
+	}
+
+	private InfoPage<BlogsEntry> _getCollectionInfoPage() {
 		CollectionQuery collectionQuery = new CollectionQuery();
 
-		collectionQuery.setConfiguration(configuration);
 		collectionQuery.setPagination(Pagination.of(20, 0));
 
 		return _infoCollectionProvider.getCollectionInfoPage(collectionQuery);
 	}
 
-	private void _givenEntries(long... entryIds) {
-		for (long entryId : entryIds) {
-			BlogsEntry blogsEntry = Mockito.mock(BlogsEntry.class);
-
-			Mockito.when(blogsEntry.getEntryId()).thenReturn(entryId);
-			Mockito.when(
-				blogsEntry.getStatus()
-			).thenReturn(
-				WorkflowConstants.STATUS_APPROVED
-			);
-
-			_entries.put(entryId, blogsEntry);
+	private void _givenEntries(String... urlTitles) {
+		for (String urlTitle : urlTitles) {
+			_byUrlTitle.put(urlTitle, _entry(urlTitle));
 		}
 	}
 
-	private void _givenUserGroups(long... userGroupIds) {
+	private void _givenUserGroups(String... names) {
 		List<UserGroup> userGroups = new ArrayList<>();
 
-		for (long userGroupId : userGroupIds) {
+		for (String name : names) {
 			UserGroup userGroup = Mockito.mock(UserGroup.class);
 
-			Mockito.when(userGroup.getUserGroupId()).thenReturn(userGroupId);
+			Mockito.when(userGroup.getName()).thenReturn(name);
 
 			userGroups.add(userGroup);
 		}
@@ -329,21 +391,81 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 		field.set(target, value);
 	}
 
+	private List<String> _urlTitles(InfoPage<BlogsEntry> infoPage) {
+		List<String> urlTitles = new ArrayList<>();
+
+		for (BlogsEntry blogsEntry : infoPage.getPageItems()) {
+			urlTitles.add(blogsEntry.getUrlTitle());
+		}
+
+		return urlTitles;
+	}
+
 	private static final long _COMPANY_ID = 20099L;
-
-	private static final long _GROUP_A = 100L;
-
-	private static final long _GROUP_B = 200L;
 
 	private static final long _SCOPE_GROUP_ID = 20123L;
 
 	private static final long _USER_ID = 42L;
 
 	private BlogsEntryLocalService _blogsEntryLocalService;
-	private Map<Long, BlogsEntry> _entries;
+	private Map<String, BlogsEntry> _byExternalReferenceCode;
+	private Map<Long, BlogsEntry> _byEntryId;
+	private Map<String, BlogsEntry> _byUrlTitle;
 	private UserGroupRecommendationsInfoCollectionProvider
 		_infoCollectionProvider;
 	private Language _language;
 	private UserGroupLocalService _userGroupLocalService;
+
+	/**
+	 * A plain implementation rather than a Mockito mock, so the test reads as
+	 * the configuration an administrator would actually write.
+	 */
+	private static class StubConfiguration
+		implements UserGroupRecommendationsConfiguration {
+
+		public StubConfiguration(
+			String[] userGroupEntries, String multiGroupStrategy,
+			String fallback) {
+
+			_userGroupEntries = userGroupEntries;
+			_multiGroupStrategy = multiGroupStrategy;
+			_fallback = fallback;
+		}
+
+		@Override
+		public String fallback() {
+			return _fallback;
+		}
+
+		@Override
+		public String multiGroupStrategy() {
+			return _multiGroupStrategy;
+		}
+
+		@Override
+		public String label() {
+			return "Recommended for Your Group";
+		}
+
+		@Override
+		public String[] objectDefinitionExternalReferenceCodes() {
+			return new String[0];
+		}
+
+		@Override
+		public String[] objectUserGroupEntries() {
+			return new String[0];
+		}
+
+		@Override
+		public String[] userGroupEntries() {
+			return _userGroupEntries;
+		}
+
+		private final String _fallback;
+		private final String _multiGroupStrategy;
+		private final String[] _userGroupEntries;
+
+	}
 
 }
