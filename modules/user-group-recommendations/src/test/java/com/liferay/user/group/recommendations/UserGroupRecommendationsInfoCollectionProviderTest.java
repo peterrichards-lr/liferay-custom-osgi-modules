@@ -8,6 +8,8 @@ import com.liferay.info.pagination.Pagination;
 import com.liferay.portal.kernel.dao.orm.QueryDefinition;
 import com.liferay.portal.kernel.language.Language;
 import com.liferay.portal.kernel.model.UserGroup;
+import com.liferay.portal.kernel.security.permission.PermissionChecker;
+import com.liferay.portal.kernel.security.permission.PermissionThreadLocal;
 import com.liferay.portal.kernel.service.ServiceContext;
 import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
 import com.liferay.portal.kernel.service.UserGroupLocalService;
@@ -78,6 +80,8 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 
 	@After
 	public void tearDown() {
+		PermissionThreadLocal.setPermissionChecker(null);
+
 		ServiceContextThreadLocal.remove();
 	}
 
@@ -372,6 +376,19 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 	}
 
 	private void _pushServiceContext(long userId) {
+		if (userId > 0) {
+			PermissionChecker permissionChecker = Mockito.mock(
+				PermissionChecker.class);
+
+			Mockito.when(permissionChecker.isSignedIn()).thenReturn(true);
+			Mockito.when(permissionChecker.getUserId()).thenReturn(userId);
+
+			PermissionThreadLocal.setPermissionChecker(permissionChecker);
+		}
+		else {
+			PermissionThreadLocal.setPermissionChecker(null);
+		}
+
 		ServiceContext serviceContext = new ServiceContext();
 
 		serviceContext.setCompanyId(_COMPANY_ID);
@@ -440,6 +457,11 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 		@Override
 		public String multiGroupStrategy() {
 			return _multiGroupStrategy;
+		}
+
+		@Override
+		public int fallbackLimit() {
+			return 0;
 		}
 
 		@Override

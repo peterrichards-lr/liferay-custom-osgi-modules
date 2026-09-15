@@ -16,6 +16,7 @@ import com.liferay.portal.kernel.service.ServiceContextThreadLocal;
 import com.liferay.portal.kernel.service.UserGroupLocalService;
 import com.liferay.portal.kernel.util.GetterUtil;
 import com.liferay.portal.kernel.util.Validator;
+import com.liferay.user.group.recommendations.UserGroupRecommendationsInfoCollectionProvider;
 import com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration;
 
 import java.util.ArrayList;
@@ -86,7 +87,8 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 
 			Set<String> references = UserGroupMapping.getReferences(
 				configuration.objectUserGroupEntries(),
-				_configuredReference, serviceContext.getUserId(),
+				_configuredReference,
+				CurrentUserUtil.getUserId(serviceContext),
 				GetterUtil.getString(
 					configuration.multiGroupStrategy(), "firstMatch"),
 				_userGroupLocalService);
@@ -122,15 +124,30 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 		return _label;
 	}
 
+	/**
+	 * What to serve when the user matches no configured group.
+	 *
+	 * <p>
+	 * {@code random} exists so a page still looks alive for a visitor who is in
+	 * no group -- a guest, or anyone outside the curated audiences -- rather
+	 * than showing an empty block.
+	 * </p>
+	 */
 	private List<ObjectEntry> _getFallbackObjectEntries(
 		UserGroupRecommendationsConfiguration configuration,
 		ServiceContext serviceContext) {
 
-		if (!Objects.equals(
-				GetterUtil.getString(configuration.fallback(), "empty"),
-				"recent")) {
+		String fallback = GetterUtil.getString(
+			configuration.fallback(), UserGroupRecommendationsInfoCollectionProvider.FALLBACK_EMPTY);
 
+		if (UserGroupRecommendationsInfoCollectionProvider.FALLBACK_EMPTY.equals(fallback)) {
 			return Collections.emptyList();
+		}
+
+		int limit = configuration.fallbackLimit();
+
+		if (limit <= 0) {
+			limit = _DEFAULT_FALLBACK_LIMIT;
 		}
 
 		List<ObjectEntry> objectEntries = new ArrayList<>();
@@ -139,11 +156,22 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 			objectEntries.addAll(
 				_objectEntryLocalService.getObjectEntries(
 					groupId, _objectDefinition.getObjectDefinitionId(), 0,
-					_FALLBACK_LIMIT));
+					_FALLBACK_POOL));
+		}
 
-			if (objectEntries.size() >= _FALLBACK_LIMIT) {
-				break;
-			}
+		if (UserGroupRecommendationsInfoCollectionProvider.FALLBACK_RANDOM.equals(fallback)) {
+
+			// Shuffle a copy: the service may hand back an immutable or
+			// cached list, and reordering it in place would be a side effect
+			// on someone else's data.
+
+			objectEntries = new ArrayList<>(objectEntries);
+
+			Collections.shuffle(objectEntries);
+		}
+
+		if (objectEntries.size() > limit) {
+			return new ArrayList<>(objectEntries.subList(0, limit));
 		}
 
 		return objectEntries;
@@ -252,7 +280,9 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 		return objectEntries;
 	}
 
-	private static final int _FALLBACK_LIMIT = 20;
+	private static final int _DEFAULT_FALLBACK_LIMIT = 3;
+
+	private static final int _FALLBACK_POOL = 100;
 
 	private static final Log _log = LogFactoryUtil.getLog(
 		ObjectEntryUserGroupRecommendationsInfoCollectionProvider.class);

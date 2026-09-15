@@ -94,11 +94,24 @@ public interface UserGroupRecommendationsConfiguration {
 			),
 			@org.osgi.service.metatype.annotations.Option(
 				label = "recent", value = "recent"
+			),
+			@org.osgi.service.metatype.annotations.Option(
+				label = "random", value = "random"
 			)
 		},
 		required = false
 	)
 	public String fallback();
+
+	/**
+	 * How many entries the {@code recent} and {@code random} fallbacks serve.
+	 * Zero or less means three, matching the size of a typical curated set.
+	 */
+	@AttributeDefinition(
+		description = "fallback-limit-description", name = "fallback-limit",
+		required = false
+	)
+	public int fallbackLimit();
 
 	/**
 	 * External reference codes of the object definitions -- new CMS content
