@@ -13,7 +13,9 @@ Bundle-SymbolicName: com.liferay.custom.user.group.recommendations
 Import-Package:\
 	com.liferay.blogs.model;version="[7.1,8.0)",\
 	com.liferay.blogs.service;version="[7.0,8.0)",\
-	com.liferay.depot.util;version="[2.0,3.0)",\
+	com.liferay.depot.constants;version="[2.4,3.0)",\
+	com.liferay.depot.model;version="[3.4,4.0)",\
+	com.liferay.depot.service;version="[3.4,4.0)",\
 	com.liferay.info.collection.provider;version="[4.3,5.0)",\
 	com.liferay.info.pagination;version="[1.1,2.0)",\
 	com.liferay.object.constants;version="[11.4,12.0)",\
