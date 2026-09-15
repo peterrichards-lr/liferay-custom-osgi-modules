@@ -36,10 +36,18 @@ jobs:
         # one broken range per build. This reports every one of them at once, by
         # name, with the expected value -- and runs before the distro download,
         # so a stale range fails in seconds rather than minutes.
+        #
+        # --check-built additionally asserts that every com.liferay package the
+        # BUILT bundle imports is declared at all. Checking the declared ranges
+        # cannot see a missing declaration, and v3.5.3 failed at publish for
+        # exactly that: a new class imported three packages absent from bnd.bnd,
+        # so bnd emitted them unversioned. publish.yml already caught it, but
+        # only at release time -- this brings it forward to the pull request,
+        # which is where it is cheap to fix.
         run: |
           jar=$(./gradlew -q printDxpApiJar --no-daemon | tail -1)
           echo "Target platform API jar: $jar"
-          python3 scripts/check_import_ranges.py "$jar"
+          python3 scripts/check_import_ranges.py "$jar" --check-built
 
       - name: Resolve every bundle against the pinned DXP distro
         # The gate the manifest-printing step here was always meant to become.

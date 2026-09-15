@@ -25,7 +25,10 @@ Import-Package:\
 	com.liferay.portal.kernel.language;version="[13.0,14.0)",\
 	com.liferay.portal.kernel.log;version="[10.0,11.0)",\
 	com.liferay.portal.kernel.model;version="[51.0,52.0)",\
+	com.liferay.portal.kernel.security.auth;version="[10.0,11.0)",\
+	com.liferay.portal.kernel.security.permission;version="[13.0,14.0)",\
 	com.liferay.portal.kernel.service;version="[54.0,55.0)",\
+	com.liferay.portal.kernel.theme;version="[14.0,15.0)",\
 	com.liferay.portal.kernel.util;version="[100.0,101.0)",\
 	com.liferay.portal.kernel.workflow;version="[27.0,28.0)",\
 	*
