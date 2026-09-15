@@ -16,6 +16,17 @@ contain a `packageinfo` file per package, carrying the exported version for the
 line. bnd will not consult those for classpath imports -- that part of #33 is
 correct -- but nothing stops us reading them ourselves.
 
+It checks two things
+--------------------
+1. Every range DECLARED in a `bnd.bnd` matches what the target line exports.
+2. Every `com.liferay.*` package the built bundle actually IMPORTS is declared.
+
+The second was added after a release failed on exactly that gap: a new class
+imported three packages that were never added to `bnd.bnd`, so bnd emitted them
+with no version at all. Checking only the declared ranges cannot see a missing
+declaration -- the file it reads simply has nothing to say about it -- and an
+unversioned import binds to whatever the portal happens to have.
+
 What it does NOT replace
 ------------------------
 `resolve` validates the whole wiring against the real distro, and the
@@ -61,6 +72,50 @@ def expected_range(version, policy):
     return f"[{floor},{major + 1}.0)"
 
 
+def manifest_imports(jar_path):
+    """com.liferay packages the BUILT bundle imports, and whether each is versioned."""
+    with zipfile.ZipFile(jar_path) as zf:
+        raw = zf.read("META-INF/MANIFEST.MF").decode("utf-8", "replace")
+
+    # Unfold continuation lines, then isolate the header.
+    unfolded = raw.replace("\r\n", "\n").replace("\n ", "")
+
+    header = ""
+
+    for line in unfolded.splitlines():
+        if line.startswith("Import-Package:"):
+            header = line.split(":", 1)[1]
+            break
+
+    if not header:
+        return []
+
+    clauses, buf, quoted = [], "", False
+
+    for char in header:
+        if char == '"':
+            quoted = not quoted
+        if char == "," and not quoted:
+            clauses.append(buf)
+            buf = ""
+        else:
+            buf += char
+
+    clauses.append(buf)
+
+    out = []
+
+    for clause in clauses:
+        clause = clause.strip()
+
+        if not clause.startswith("com.liferay"):
+            continue
+
+        out.append((clause.split(";")[0].strip(), "version=" in clause))
+
+    return out
+
+
 def import_clauses(text):
     """Import-Package clauses from a bnd.bnd, with continuations joined."""
     joined = text.replace("\\\n", "")
@@ -102,6 +157,10 @@ def main():
     parser.add_argument(
         "--fix", action="store_true",
         help="rewrite each bnd.bnd in place instead of only reporting")
+    parser.add_argument(
+        "--check-built", action="store_true",
+        help="also assert every com.liferay import in each built bundle is "
+             "versioned (requires the modules to have been built)")
     args = parser.parse_args()
 
     zf = zipfile.ZipFile(args.jar)
@@ -158,6 +217,25 @@ def main():
         if args.fix and (rewritten != text):
             bnd.write_text(rewritten)
             print(f"fixed {bnd}")
+
+    if args.check_built:
+        built = 0
+
+        for jar_path in sorted(
+                pathlib.Path(args.modules_dir).glob("*/build/libs/*.jar")):
+
+            for package, versioned in manifest_imports(jar_path):
+                built += 1
+
+                if versioned:
+                    continue
+
+                print(
+                    f"::error::{jar_path.name} imports {package} with no "
+                    f"version range -- add it to bnd.bnd")
+                problems += 1
+
+        print(f"{built} imports checked in built bundles")
 
     print(
         f"\n{checked} com.liferay imports checked against "
