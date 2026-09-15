@@ -475,61 +475,60 @@ the entire justification for the bundle.
 
 #### Using it
 
-The module has no REST surface. Everything is done in the UI, and the only build
-artifact is the bundle.
+The module has no REST surface. The mapping lives in OSGi configuration; the
+only thing done in the page editor is choosing the provider.
 
-**1. Deploy the bundle.** Drop the jar into the instance's `osgi/modules`, or from
-the workspace:
+**1. Deploy the bundle** into `osgi/modules`, or from the workspace:
 
 ```bash
 blade gw deploy
 ```
 
-Confirm it started — the provider is invisible until the component is active:
+**2. Add the configuration.** Deploy a `.config` under
+`configs/<env>/osgi/configs/` (see [Configuration](#configuration) below), or
+edit it at *Control Panel → System Settings → Content and Data → User Group
+Recommendations*.
 
-```bash
-# in the Gogo shell
-lb | grep user.group.recommendations      # expect Active
-scr:info com.liferay.user.group.recommendations.UserGroupRecommendationsInfoCollectionProvider
+**3. Check it registered.** One provider is registered per configured object
+definition, per company:
+
+```
+INFO  Registered a user group recommendations collection provider for
+      <definition> in company <id>
 ```
 
-The component must report **satisfied**. If it is unsatisfied, a `@Reference` did
-not bind and the provider will not appear in step 4.
+If instead you see `No object definitions are configured`, the `.config` did not
+reach the server. On Liferay PaaS that file is baked into the image, unlike the
+bundles `deploy.sh` fetches at boot, so it needs a full build rather than a
+restart.
 
-**2. Create the user groups.** *Control Panel → Users → User Groups → Add*. Create
-one per audience, for example `Riders` and `Engineering`. The names are yours; the
-module reads whatever exists.
+**4. Create the user groups** named in the configuration, and assign members.
+The module *reads* membership; it does not establish it.
 
-**3. Assign users.** *Control Panel → Users and Organizations*, select each user →
-*User Groups* → assign. The module **reads** membership, it does not establish it —
-nothing happens until users are actually in a group.
+**5. Add the collection to a page.** Edit a Content Page → drag in a **Collection
+Display** fragment → *Select Collection* → the **Providers** tab → choose your
+provider. For object content it is named by the `label` setting; the legacy
+Blogs provider is always called *Recommended for Your Group*.
 
-**4. Add the collection to a page.** Edit a Content Page → drag in a **Collection
-Display** fragment → in its sidebar choose the collection source, and pick
-**Recommended for Your Group** from the *Providers* list.
-
-**5. Configure it.** The sidebar now shows one multiselect per user group. Pick the
-entries each group should see, in the order they should appear. Set the two
-behaviour options, then **Publish**.
-
-**6. Verify.** Do not log out and back in six times. Use
-*Control Panel → Users → select a user → Actions → **Impersonate User***, view the
-page, then end impersonation. Each group should show exactly the entries configured
-for it.
+**6. Publish and verify** with *Control Panel → Users → select a user → Actions →
+Impersonate User*, rather than logging in and out repeatedly.
 
 ##### If the collection comes back empty
 
-| Symptom | Likely cause |
-|---|---|
-| Provider missing from the *Providers* list | Bundle not Active, or the component is unsatisfied — check step 1 |
-| No user group fields in the sidebar | `getConfigurationInfoForm()` saw no service context. This is the known unverified risk below; the mapping would need to move to OSGi configuration |
-| Empty for every user | Nobody is in a user group, or the fields were never saved. Check step 3 |
-| Empty for one user only | That user is in no configured group — expected, and controlled by the *no group* behaviour setting |
-| Fewer entries than configured | Some are unapproved or deleted; the provider skips them by design |
-| Wrong order | See the ordering caveat below |
+Enable `INFO` for `com.liferay.user.group.recommendations` at *Control Panel →
+System → Log Levels*. Since v3.5.3 the three ordinary reasons for an empty
+collection each log a line, because silence made them indistinguishable:
 
-A failure to resolve the current user is logged at `ERROR` against
-`com.liferay.user.group.recommendations`.
+| Log line | Meaning |
+|---|---|
+| `No signed-in user, so no recommendations apply` | a guest, or no resolvable user. Expected for anonymous visitors when `fallback` is `empty` |
+| `User <id> belongs to no user groups` | the user is in none of the configured groups. Check step 4 |
+| `User <id> matched configured user group "<name>"` | the mapping worked; anything empty after this is entry resolution |
+| `No <type> entry in groups [...] matches "<ref>"` | a reference does not resolve — typically a wrong friendly URL |
+| `No object definition matches "<value>"` | the content type name is wrong; the message lists every form it tried |
+
+Nothing at all in the log means the provider was never invoked — check it is
+actually selected on the fragment.
 
 #### New CMS content (objects) vs legacy Blogs
 
@@ -559,69 +558,76 @@ activation and whenever the configuration changes.
 
 #### Configuration
 
-Nothing is compiled in. The mapping lives in OSGi configuration, at
-*Control Panel &rarr; System Settings &rarr; Content and Data &rarr; User Group
-Recommendations*, and deploys as a file under `configs/<env>/osgi/configs/`:
+Nothing is compiled in. The mapping lives in OSGi configuration, at *Control
+Panel &rarr; System Settings &rarr; Content and Data &rarr; User Group
+Recommendations*, and deploys as a file under `configs/<env>/osgi/configs/`
+named for the configuration PID:
 
 ```properties
 # com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration.config
 
+label="MotorBlog - Recommended for Your Group"
+
 objectDefinitionExternalReferenceCodes=["MotorBlog"]
 
-objectUserGroupEntries=[\
-  "MotorBlog|Riders=the-scenic-route-top-tips-for-mountain-pass-riding,\
-#   solara-horizon-redefining-long-distance-luxury-touring,\
-#   the-art-of-solo-moto-camping-finding-freedom-under-the-stars",\
-  "MotorBlog|Engineering=the-soul-of-solara-sculpting-performance-and-passion,\
-#   behind-the-blueprint-the-engineering-lab-at-solara-moto-gear,\
-#   sourcing-sustainably-our-path-to-carbon-neutral-manufacturing"\
-]
+objectUserGroupEntries=["MotorBlog|Riders=first-post,second-post,third-post","MotorBlog|Engineering=fourth-post,fifth-post,sixth-post"]
 
 multiGroupStrategy="firstMatch"
-fallback="empty"
-label="Recommended for Your Group"
+fallback="random"
+fallbackLimit=3
 ```
 
-Each value is resolved as an **external reference code**, then as an object
-definition **name**, then as a name with the `C_` prefix Liferay gives custom
-definitions. So a custom content type can be named plainly:
-
-| Written in config | Matches |
+| Setting | Purpose |
 |---|---|
-| `MotorBlog` | ERC `MotorBlog`, name `MotorBlog`, or name `C_MotorBlog` |
-| `L_CMS_BLOG` | the stock CMS Blog definition, by ERC |
+| `label` | Name shown in the collection picker. **Required for object content** — without it the provider is listed unnamed |
+| `objectDefinitionExternalReferenceCodes` | Which content types to serve. One provider is registered per entry, per company |
+| `objectUserGroupEntries` | `<content type>\|<user group>=<ref>,<ref>` — the prefix must match the spelling used above |
+| `userGroupEntries` | The same, for legacy Blogs, with no content-type prefix |
+| `multiGroupStrategy` | `firstMatch` (default) or `union` |
+| `fallback` | `empty` (default), `recent`, or `random` |
+| `fallbackLimit` | How many the last two serve. Default `3` |
 
-That matters for custom types. A system definition has a legible `L_`-prefixed
-code, but one created through the UI gets a **generated** external reference
-code, and pinning a configuration file to a generated identifier is neither
-readable nor portable between environments.
+##### Naming the content type
 
-For legacy Blogs use `userGroupEntries` instead, without the content-type prefix:
+Each value is resolved as an **external reference code**, then an object
+definition **name**, then a `C_`-prefixed name, and finally case-insensitively
+against name, short name and every localised **label**.
 
-```properties
-userGroupEntries=["Riders=the-scenic-route,solara-horizon,solo-moto-camping"]
-```
+The label matters most in practice. Liferay derives a definition's name from its
+label with its own capitalisation — a structure labelled `MotorBlog` is *named*
+`Motorblog` — and a custom definition's external reference code is a generated
+UUID. The label is the only identifier an administrator actually sees, so it is
+the one the configuration accepts.
 
-Entries are served **in the order written**; the provider never re-sorts, because
-the point of naming them individually is that the sequence is chosen. User groups
-are matched by name, case-insensitively.
+##### Referencing entries
 
-**Reference entries by friendly URL.** Both providers resolve a reference as an
-external reference code, then a friendly URL, then a numeric entry id.
+A reference resolves as an external reference code, then a friendly URL, then a
+numeric id.
 
-The friendly URL is the form to use. It is the last segment of the entry's `/w/`
-URL and is chosen by whoever wrote the content, so it is legible in a
-configuration file and recognisable when reviewing one. An entry created through
-the UI gets a *generated* external reference code -- a UUID -- which is neither.
-Entry ids are accepted last and suit a single environment only: they differ
-between instances, so a file using them resolves to nothing, or to unrelated
-entries, elsewhere.
+**Prefer the friendly URL** — the last segment of the entry's `/w/` URL. It is
+chosen by whoever wrote the content, so it is legible in a configuration file and
+recognisable in review. An entry created through the UI gets a generated external
+reference code; ids differ between environments, so a file using them resolves to
+nothing, or to unrelated entries, elsewhere.
 
-An earlier revision put this mapping in the page editor via
-`ConfigurableInfoCollectionProvider`. It was withdrawn: the configuration is
-stored in the page and so is lost on a site rebuild, it must be repeated for
-every placement of the fragment, and it can be neither version-controlled nor
-seeded by a deployment script.
+Order is preserved exactly as written. The provider never re-sorts.
+
+##### Asset Libraries
+
+CMS content structures are `scope: depot` by default, meaning their entries live
+in an **Asset Library** rather than in the site the page belongs to. Entry
+resolution and the fallback therefore span the site's connected asset libraries
+via `SiteConnectedGroupGroupProviderUtil`, the same helper Liferay's own object
+collection provider uses. Nothing needs configuring for this; it is noted because
+a lookup against the page's own group alone finds nothing, which is not obvious.
+
+##### Who the recommendations are for
+
+The current user is resolved from the permission checker, then the principal
+thread local, then the theme display, and only then the service context. The
+service context is last deliberately: during a render it carries the company and
+scope group but frequently no user at all, and relying on it made every lookup
+behave as though the visitor belonged to no groups.
 
 #### Behaviour
 
@@ -654,18 +660,25 @@ Every range in `bnd.bnd` was read from the `packageinfo` files in the
 [#33](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/33)
 for why bnd cannot derive them itself.
 
-**Runtime verification is outstanding.** The 9 unit tests exercise selection,
-ordering, multi-group strategy, fallback and pagination with mocks, and the
-bundle resolves against the pinned distro — but neither exercises the page
-editor. Two things specifically need confirming on a live portal:
+**Runtime verified on a live portal** (2026-09-15). The 43 unit tests cover
+selection, configured ordering, multi-group strategy, both fallbacks, pagination
+including the `QueryUtil.ALL_POS` sentinel, user resolution and content-type
+lookup; the bundle resolves against the pinned distro; and the provider has been
+deployed, registered and rendered against a real CMS content structure.
 
-1. That `getConfigurationInfoForm()` sees a populated `ServiceContextThreadLocal`.
-   It takes no arguments, so the company and scope group can only come from the
-   thread local. If it is empty there, the form renders with no user group fields
-   and the mapping would have to move to OSGi configuration instead.
-2. That a multiselect returns values in **selection** order rather than option
-   order. The provider preserves whatever order it is given; if the framework
-   normalises it, explicit ordering would need a different control.
+Four defects were found only by deploying, each of which had presented as an
+empty collection with nothing in the log:
+
+| Defect | Fixed in |
+|---|---|
+| `IndexOutOfBoundsException: fromIndex = -1` — the editor requests a count with a negative pagination bound | v3.5.1 |
+| Configuration absent from System Settings — `@Designate` missing | v3.5.1 |
+| Content type unresolvable by label; the case-insensitive scan queried an impossible status and iterated nothing | v3.5.2 |
+| The current user came from a `ServiceContext` that carries none during a render | v3.5.3 |
+
+The common thread is worth recording: each was a silent `return` on a path that
+should have said why. Those paths now log at `INFO`, which is what makes the
+troubleshooting table above usable.
 
 ## Building
 
@@ -822,9 +835,17 @@ range against the line named by `liferay.workspace.product`:
 ```bash
 jar=$(./gradlew -q printDxpApiJar)
 
-python3 scripts/check_import_ranges.py "$jar"          # verify
-python3 scripts/check_import_ranges.py "$jar" --fix    # rewrite every bnd.bnd
+python3 scripts/check_import_ranges.py "$jar"                 # verify declared ranges
+python3 scripts/check_import_ranges.py "$jar" --check-built   # also check built bundles
+python3 scripts/check_import_ranges.py "$jar" --fix           # rewrite every bnd.bnd
 ```
+
+`--check-built` asserts that every `com.liferay` package the **built bundle**
+imports is declared at all. That is a different question from whether the
+declared ranges are current, and neither check subsumes the other: reading
+`bnd.bnd` cannot reveal a package nobody wrote down, and v3.5.3 failed at publish
+for exactly that — a new class imported three packages absent from `bnd.bnd`, so
+bnd emitted them unversioned.
 
 `--fix` makes a line rebump mechanical: change `liferay.workspace.product`,
 rerun with `--fix`, rebuild.
@@ -864,4 +885,4 @@ spans lines.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-14* | *Last Reviewed: 2026-09-14*
+*Last Updated: 2026-09-15* | *Last Reviewed: 2026-09-15*
