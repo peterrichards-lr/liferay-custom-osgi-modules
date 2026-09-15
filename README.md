@@ -859,14 +859,26 @@ requirement, so a rebump surfaces one broken range per build; this names all of
 them at once. Run against the `q1.12-lts` jar, today's ranges report 17
 mismatches, including the four kernel packages in the table above.
 
-One thing the check deliberately does not do is tighten the convention. This
-repository floors a range to the major (`[24.0,25.0)` for an exported `24.2.0`),
-whereas bnd's own consumer policy `${range;[==,+)}` would floor to the compiled
-minor (`[24.2,25.0)`). The repository's form is **wider**, and so permits
-binding to an older minor that may lack methods the code was compiled against.
-25 of 33 imported packages differ on this point. Pass `--policy bnd` to see what
-the narrower ranges would be; adopting them is tracked separately from
-[#33](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/33).
+##### The ranges follow bnd's consumer policy
+
+A range floors to the **compiled version**, not to the major: an exported
+`24.2.0` yields `[24.2,25.0)`, which is what bnd's own consumer policy
+`${range;[==,+)}` produces.
+
+This repository previously floored to the major (`[24.0,25.0)`). That was wider,
+and the extra width was a claim rather than a fact: a bundle compiled against
+`24.2` declaring `[24.0,25.0)` resolves happily on a portal exporting `24.0.0`
+and then fails with `NoSuchMethodError` on anything added since. 24 of 35
+imported packages were affected, `com.liferay.portal.configuration.metatype.annotations`
+worst at eleven minors of slack.
+
+The narrower form refuses at resolution instead — loudly, at deploy time, with
+the same diagnostics as any other unsatisfied requirement. That is the trade this
+repository already makes everywhere else, and
+[#38](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/38)
+records the reasoning.
+
+`--policy major` still reproduces the old behaviour for comparison.
 
 A bundle is a per-DXP-line artifact whenever it imports packages whose major
 versions differ across the lines it targets. On the evidence above, every module

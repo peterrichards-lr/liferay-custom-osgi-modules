@@ -11,24 +11,24 @@ Bundle-SymbolicName: com.liferay.custom.user.group.recommendations
 # This is a per-DXP-line artifact: com.liferay.info.* and com.liferay.blogs.*
 # are application packages, not kernel, and both move majors across lines.
 Import-Package:\
-	com.liferay.blogs.model;version="[7.0,8.0)",\
+	com.liferay.blogs.model;version="[7.1,8.0)",\
 	com.liferay.blogs.service;version="[7.0,8.0)",\
 	com.liferay.depot.util;version="[2.0,3.0)",\
-	com.liferay.info.collection.provider;version="[4.0,5.0)",\
-	com.liferay.info.pagination;version="[1.0,2.0)",\
-	com.liferay.object.constants;version="[11.0,12.0)",\
-	com.liferay.object.model;version="[13.0,14.0)",\
+	com.liferay.info.collection.provider;version="[4.3,5.0)",\
+	com.liferay.info.pagination;version="[1.1,2.0)",\
+	com.liferay.object.constants;version="[11.4,12.0)",\
+	com.liferay.object.model;version="[13.4,14.0)",\
 	com.liferay.object.service;version="[87.0,88.0)",\
-	com.liferay.portal.configuration.metatype.annotations;version="[1.0,2.0)",\
+	com.liferay.portal.configuration.metatype.annotations;version="[1.11,2.0)",\
 	com.liferay.portal.configuration.metatype.bnd.util;version="[3.0,4.0)",\
 	com.liferay.portal.kernel.dao.orm;version="[18.0,19.0)",\
-	com.liferay.portal.kernel.language;version="[13.0,14.0)",\
+	com.liferay.portal.kernel.language;version="[13.1,14.0)",\
 	com.liferay.portal.kernel.log;version="[10.0,11.0)",\
 	com.liferay.portal.kernel.model;version="[51.0,52.0)",\
-	com.liferay.portal.kernel.security.auth;version="[10.0,11.0)",\
+	com.liferay.portal.kernel.security.auth;version="[10.1,11.0)",\
 	com.liferay.portal.kernel.security.permission;version="[13.0,14.0)",\
-	com.liferay.portal.kernel.service;version="[54.0,55.0)",\
-	com.liferay.portal.kernel.theme;version="[14.0,15.0)",\
+	com.liferay.portal.kernel.service;version="[54.1,55.0)",\
+	com.liferay.portal.kernel.theme;version="[14.1,15.0)",\
 	com.liferay.portal.kernel.util;version="[100.0,101.0)",\
-	com.liferay.portal.kernel.workflow;version="[27.0,28.0)",\
+	com.liferay.portal.kernel.workflow;version="[27.4,28.0)",\
 	*
