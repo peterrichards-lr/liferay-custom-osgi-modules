@@ -59,9 +59,10 @@ def read_packageinfo(zf, package):
 def expected_range(version, policy):
     """The range this repository declares for an exported `version`.
 
-    `major` floors to the major, matching what is written by hand today.
-    `bnd` matches bnd's own consumer policy ${range;[==,+)}, which floors to the
-    compiled minor and is therefore narrower -- see #33 for why the two differ.
+    `bnd` is the default and matches bnd's own consumer policy ${range;[==,+)},
+    flooring to the compiled version. `major` floors to the major instead, which
+    is what this repository declared before #38: wider, and therefore claiming
+    compatibility with minors the code was never built or tested against.
     """
     parts = version.split(".")
     major = int(parts[0])
@@ -152,8 +153,9 @@ def main():
     parser.add_argument(
         "--modules-dir", default="modules", help="directory holding the modules")
     parser.add_argument(
-        "--policy", choices=("major", "bnd"), default="major",
-        help="major (default, floors to the major) or bnd (${range;[==,+)})")
+        "--policy", choices=("major", "bnd"), default="bnd",
+        help="bnd (default, ${range;[==,+)}, floors to the compiled version) "
+             "or major (floors to the major -- the pre-#38 convention)")
     parser.add_argument(
         "--fix", action="store_true",
         help="rewrite each bnd.bnd in place instead of only reporting")
