@@ -1,11 +1,9 @@
 package com.liferay.user.group.recommendations.internal;
 
-import com.liferay.depot.util.SiteConnectedGroupGroupProviderUtil;
 import com.liferay.info.collection.provider.CollectionQuery;
 import com.liferay.info.collection.provider.InfoCollectionProvider;
 import com.liferay.info.pagination.InfoPage;
 import com.liferay.info.pagination.Pagination;
-import com.liferay.object.constants.ObjectDefinitionConstants;
 import com.liferay.object.model.ObjectDefinition;
 import com.liferay.object.model.ObjectEntry;
 import com.liferay.object.service.ObjectEntryLocalService;
@@ -150,13 +148,20 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 			limit = _DEFAULT_FALLBACK_LIMIT;
 		}
 
+		long[] groupIds = CurrentScopeUtil.getSearchableGroupIds(
+			_objectDefinition, serviceContext);
+
 		List<ObjectEntry> objectEntries = new ArrayList<>();
 
-		for (long groupId : _getGroupIds(serviceContext)) {
+		for (long groupId : groupIds) {
 			objectEntries.addAll(
 				_objectEntryLocalService.getObjectEntries(
 					groupId, _objectDefinition.getObjectDefinitionId(), 0,
 					_FALLBACK_POOL));
+		}
+
+		if (objectEntries.isEmpty()) {
+			_warnIfEntriesExistElsewhere(groupIds);
 		}
 
 		if (UserGroupRecommendationsInfoCollectionProvider.FALLBACK_RANDOM.equals(fallback)) {
@@ -178,42 +183,6 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 	}
 
 	/**
-	 * The groups an entry of this definition could live in.
-	 *
-	 * <p>
-	 * A definition scoped to {@code depot} stores its entries in an Asset
-	 * Library, not in the site the page belongs to, so looking only in
-	 * {@code getScopeGroupId} finds nothing. The CMS content structures are
-	 * depot-scoped by default, which makes this the normal case rather than an
-	 * edge one. Liferay's own object collection provider consults the same
-	 * helper for the same reason.
-	 * </p>
-	 */
-	private long[] _getGroupIds(ServiceContext serviceContext) {
-		long scopeGroupId = serviceContext.getScopeGroupId();
-
-		if (!Objects.equals(
-				_objectDefinition.getScope(),
-				ObjectDefinitionConstants.SCOPE_DEPOT)) {
-
-			return new long[] {scopeGroupId};
-		}
-
-		try {
-			return SiteConnectedGroupGroupProviderUtil.
-				getCurrentAndAncestorSiteAndDepotGroupIds(scopeGroupId);
-		}
-		catch (Exception exception) {
-			_log.error(
-				"Unable to resolve the asset libraries connected to group " +
-					scopeGroupId,
-				exception);
-
-			return new long[] {scopeGroupId};
-		}
-	}
-
-	/**
 	 * Resolves each reference as an external reference code, then as a friendly
 	 * URL, then as a numeric entry id.
 	 *
@@ -231,7 +200,7 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 	private List<ObjectEntry> _resolve(
 		Set<String> references, ServiceContext serviceContext) {
 
-		long[] groupIds = _getGroupIds(serviceContext);
+		long[] groupIds = CurrentScopeUtil.getSearchableGroupIds(_objectDefinition, serviceContext);
 
 		List<ObjectEntry> objectEntries = new ArrayList<>(references.size());
 
@@ -278,6 +247,43 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 		}
 
 		return objectEntries;
+	}
+
+	/**
+	 * Distinguishes "this content type has no entries" from "its entries are
+	 * not in the groups we searched".
+	 *
+	 * <p>
+	 * There is a count of entries by object definition that takes no group, but
+	 * no matching list, so this cannot be used to serve content -- only to say
+	 * plainly which of the two situations applies. That is the single most
+	 * useful thing to know when a collection renders empty, and it was not
+	 * knowable from the log before.
+	 * </p>
+	 */
+	private void _warnIfEntriesExistElsewhere(long[] groupIds) {
+		try {
+			int total = _objectEntryLocalService.getObjectEntriesCount(
+				_objectDefinition.getObjectDefinitionId());
+
+			if (total > 0) {
+				_log.warn(
+					"Found no " + _configuredReference + " entries in groups " +
+						Arrays.toString(groupIds) + ", but " + total +
+							" exist for this content type. Its entries are " +
+								"not reachable from this site -- if it is " +
+									"depot scoped, connect the asset library " +
+										"holding them.");
+			}
+			else if (_log.isInfoEnabled()) {
+				_log.info(
+					"Content type " + _configuredReference +
+						" has no entries at all");
+			}
+		}
+		catch (Exception exception) {
+			_log.error("Unable to count entries", exception);
+		}
 	}
 
 	private static final int _DEFAULT_FALLBACK_LIMIT = 3;
