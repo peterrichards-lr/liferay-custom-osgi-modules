@@ -36,6 +36,7 @@ what — add yourself there when you consume or contribute one.
 | [`commerce-site-type`](#commerce-site-type) | **available** | Reads and sets a commerce channel's B2B/B2C/B2X site type, and reports allowed account types |
 | [`client-extension-entry`](#client-extension-entry) | **available** | Exposes the portlet id Liferay composes for a client extension, which no Liferay API publishes |
 | [`user-group-recommendations`](#user-group-recommendations) | **available** | Serves hand-picked blog entries per user group, as a stand-in for Analytics Cloud / LDP content recommendations |
+| [`dxp-routes-domain`](#dxp-routes-domain) | **available** | Keeps Tomcat's `:8080` out of the DXP domain published to client extensions when a TLS-terminating proxy serves the portal |
 
 ### fragment-override
 
@@ -680,6 +681,73 @@ The common thread is worth recording: each was a silent `return` on a path that
 should have said why. Those paths now log at `INFO`, which is what makes the
 troubleshooting table above usable.
 
+### dxp-routes-domain
+
+Every DXP publishes its own address to client extensions in
+`routes/<virtual-instance>/dxp` (`com.liferay.lxc.dxp.main.domain`,
+`mainDomain` and `domains`). The writer is `com.liferay.portal.k8s.agent.impl`,
+which runs in every DXP container, not only on Kubernetes.
+
+Behind a proxy that terminates TLS (`web.server.protocol=https`, Tomcat on
+plain HTTP 8080), it publishes `host:8080`, a port the proxy does not serve. A
+client extension that resolves the portal at startup then builds its OAuth and
+API URLs against `https://host:8080`.
+
+The cause, read from the DXP 2026.q3.5 bytecode, is that the writer chooses the
+port two ways:
+
+- **The initial write and every company change** ask for the *secure* local
+  port, because the protocol is `https`. Tomcat never sees a secure request
+  behind the proxy, so that port is `-1` and the bare host is written. This is
+  correct.
+- **The address listener** uses the *event's* secure flag. The first plain
+  request records Tomcat's connector, 8080, fires the listener with
+  `secure=false`, and `:8080` is appended to every domain.
+
+The value then depends on which path wrote last. Reported upstream as
+[liferay-docker-manager#2344](https://github.com/peterrichards-lr/liferay-docker-manager/issues/2344).
+
+This module registers its own `PortalInetSocketAddressEventListener` at
+`service.ranking=-1000`. Liferay notifies listeners highest ranking first, and
+the agent's registers with none (0), so this one runs straight after it in the
+same request. It removes exactly the connector port the agent just appended,
+and only on a non-secure event when the protocol is `https`. Each address is
+recorded once per JVM, so nothing appends the port again.
+
+#### What was ruled out first
+
+- **A property.** None exists: the append happens whenever the port is
+  positive, and skips only an entry that already has a colon, which a company
+  virtual host cannot.
+- **The forwarded headers.** `web.server.forwarded.*` changes
+  `Portal.isSecure(request)`, not Tomcat's `request.isSecure()` or
+  `getLocalPort()`, which are what get recorded.
+- **Marking every Tomcat request secure.** Both paths then publish `:8080`.
+- **Disabling the agent's component.** That removes the tree client extensions
+  depend on.
+- **Correcting the files from outside the container.** That leaves a window,
+  and misses any restart nobody is watching.
+
+#### Verifying it
+
+Enable `INFO` for `com.liferay.dxp.routes.domain` at *Control Panel → System →
+Log Levels*. Each correction logs
+`Removed connector port 8080 from the published DXP domain in [...]`.
+Liferay sets `com.liferay` to `ERROR` by default, so the line is silent until
+then.
+
+#### Liferay versions
+
+Imports only `com.liferay.portal.kernel.log` and
+`com.liferay.portal.kernel.util`, so one artifact covers every line that
+exports those majors. Resolved against dxp-2026.q3.0; verified live on
+2026.q3.5 behind LDM's Traefik. With the bundle, restarts left the domain bare
+throughout. Without it, the same restart published `host:8080` 1.4 s after
+Tomcat started.
+
+Remove it once the agent derives the secure flag from `web.server.protocol` on
+both paths.
+
 ## Building
 
 ```bash
@@ -897,4 +965,4 @@ spans lines.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-15* | *Last Reviewed: 2026-09-15*
+*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*
