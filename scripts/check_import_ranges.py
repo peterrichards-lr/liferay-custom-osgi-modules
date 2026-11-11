@@ -45,6 +45,16 @@ import zipfile
 RANGE_RE = re.compile(r'version="([^"]+)"')
 VERSION_RE = re.compile(r"version\s+(\S+)")
 
+# A module may declare, in a `bnd.bnd` comment, packages whose range spans more
+# than one DXP line on purpose:
+#
+#     # span-lines: com.liferay.portal.kernel.util
+#
+# Such a range is not held to the single-line policy, only to CONTAINING what
+# this line exports -- so a line falling outside it still fails. Reserved for
+# modules that touch API stable across those lines and say so in the comment.
+SPAN_RE = re.compile(r"^#\s*span-lines:\s*(.+)$", re.MULTILINE)
+
 
 def read_packageinfo(zf, package):
     """Exported version of `package` on this line, or None if absent."""
@@ -71,6 +81,32 @@ def expected_range(version, policy):
     floor = f"{major}.0" if policy == "major" else f"{major}.{minor}"
 
     return f"[{floor},{major + 1}.0)"
+
+
+def _version_tuple(version):
+    return tuple(int(part) for part in version.split("."))
+
+
+def range_contains(declared, version):
+    """Whether an OSGi range such as `[96.7,101.0)` includes `version`."""
+    match = re.fullmatch(r"([\[(])\s*([\d.]+)\s*,\s*([\d.]+)\s*([\])])", declared)
+
+    if not match:
+        return False
+
+    low_bracket, low, high, high_bracket = match.groups()
+    value = _version_tuple(version)
+    low_value = _version_tuple(low)
+    high_value = _version_tuple(high)
+
+    pad = max(len(value), len(low_value), len(high_value))
+    value, low_value, high_value = (
+        v + (0,) * (pad - len(v)) for v in (value, low_value, high_value))
+
+    above = value >= low_value if low_bracket == "[" else value > low_value
+    below = value <= high_value if high_bracket == "]" else value < high_value
+
+    return above and below
 
 
 def manifest_imports(jar_path):
@@ -174,6 +210,11 @@ def main():
         text = bnd.read_text()
         module = bnd.parent.name
         rewritten = text
+        spanning = {
+            package.strip()
+            for match in SPAN_RE.finditer(text)
+            for package in match.group(1).split(",")
+        }
 
         for clause in import_clauses(text):
             if not clause.startswith("com.liferay"):
@@ -199,6 +240,10 @@ def main():
             expected = expected_range(actual, args.policy)
 
             if declared == expected:
+                continue
+
+            if package in spanning and declared and range_contains(
+                    declared, actual):
                 continue
 
             problems += 1
