@@ -1,0 +1,11 @@
+Bundle-Name: Liferay DXP Routes Domain Port Fix
+Bundle-SymbolicName: com.liferay.custom.dxp.routes.domain
+
+# Ranges are hand-maintained and load-bearing; see issue #33. Read from the
+# packageinfo files of release.dxp.api for dxp-2026.q3.0, floored to the
+# compiled version and bounded to the major (issue #38). Both are kernel
+# packages, so this artifact is not tied to one DXP line beyond them.
+Import-Package:\
+	com.liferay.portal.kernel.log;version="[10.0,11.0)",\
+	com.liferay.portal.kernel.util;version="[100.0,101.0)",\
+	*
