@@ -114,6 +114,27 @@ public interface UserGroupRecommendationsConfiguration {
 	public int fallbackLimit();
 
 	/**
+	 * The number of entries to serve. A longer curated set is trimmed to it, in
+	 * configured order. Zero or less serves whatever is configured, as before.
+	 * When set, it also sizes the fallback, in place of {@code fallbackLimit}.
+	 */
+	@AttributeDefinition(
+		description = "item-count-description", name = "item-count",
+		required = false
+	)
+	public int itemCount();
+
+	/**
+	 * Whether a curated set that resolves short of {@code itemCount} is topped
+	 * up from {@code fallback}. Off by default, so filler is never mixed into a
+	 * hand-picked set without being asked for.
+	 */
+	@AttributeDefinition(
+		description = "top-up-description", name = "top-up", required = false
+	)
+	public boolean topUp();
+
+	/**
 	 * External reference codes of the object definitions -- new CMS content
 	 * types -- to serve, for example {@code L_CMS_BLOG} or the code of a custom
 	 * type such as MotorBlog.

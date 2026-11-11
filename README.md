@@ -587,6 +587,39 @@ fallbackLimit=3
 | `multiGroupStrategy` | `firstMatch` (default) or `union` |
 | `fallback` | `empty` (default), `recent`, or `random` |
 | `fallbackLimit` | How many the last two serve. Default `3` |
+| `itemCount` | How many entries the block shows. A longer curated set is trimmed to it, in configured order, and it sizes the fallback in place of `fallbackLimit`. Default `0`: serve whatever is configured |
+| `topUp` | When a curated set resolves short of `itemCount`, fill it from `fallback`. Default `false` |
+
+##### Keeping the block a fixed size
+
+A curated set silently shrinks when a reference is mistyped or an entry is
+unpublished or deleted, and a three-across grid showing two reads as broken.
+`itemCount` with `topUp` keeps it at size (issue #47):
+
+```properties
+itemCount=3
+topUp=true
+fallback="random"
+```
+
+| Configured | Resolve | Served |
+|---|---|---|
+| 3 | 3 | the 3 curated, in order |
+| 3 | 2 | the 2 curated, then 1 from the fallback, never repeating a curated entry |
+| 5 | 5 | the first 3 curated |
+| none match | – | 3 from the fallback |
+
+Topping up is opt-in, so filler is never mixed into a hand-picked set without
+being asked for. A set that stays short says so at `INFO`, with the reason:
+
+```text
+Serving 2 of the target 3 Blogs entries: topUp is off
+Serving 2 of the target 3 MotorBlog entries: the fallback has no more entries to add
+```
+
+With `fallback="empty"` there is nothing to top up from, so `itemCount` is a
+preference, not a guarantee. The Collection Display fragment's own *Number of
+Items* only trims; it cannot top up.
 
 ##### Naming the content type
 
