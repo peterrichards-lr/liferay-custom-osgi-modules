@@ -1,11 +1,17 @@
 Bundle-Name: Liferay DXP Routes Domain Port Fix
 Bundle-SymbolicName: com.liferay.custom.dxp.routes.domain
 
-# Ranges are hand-maintained and load-bearing; see issue #33. Read from the
-# packageinfo files of release.dxp.api for dxp-2026.q3.0, floored to the
-# compiled version and bounded to the major (issue #38). Both are kernel
-# packages, so this artifact is not tied to one DXP line beyond them.
+# Ranges are hand-maintained and load-bearing; see issue #33.
+#
+# com.liferay.portal.kernel.util deliberately spans DXP lines, an exception to
+# the single-line consumer policy of #38. The defect exists on both 2026.q1 LTS
+# (util 96.7.0) and 2026.q3 (util 100.0.0), and LDM ships one artifact to both.
+# The module uses only API unchanged across them -- Portal#getPortalLocalPort
+# (boolean), PortalInetSocketAddressEventListener and two PropsValues fields --
+# and is verified live at both ends: 2026.q1.14-lts and 2026.q3.5.
+#
+# span-lines: com.liferay.portal.kernel.util
 Import-Package:\
 	com.liferay.portal.kernel.log;version="[10.0,11.0)",\
-	com.liferay.portal.kernel.util;version="[100.0,101.0)",\
+	com.liferay.portal.kernel.util;version="[96.7,101.0)",\
 	*
