@@ -22,6 +22,7 @@ import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.workflow.WorkflowConstants;
 import com.liferay.user.group.recommendations.internal.CurrentUserUtil;
 import com.liferay.user.group.recommendations.internal.InfoPageUtil;
+import com.liferay.user.group.recommendations.internal.ItemCountUtil;
 import com.liferay.user.group.recommendations.configuration.UserGroupRecommendationsConfiguration;
 
 import java.util.ArrayList;
@@ -124,12 +125,11 @@ public class UserGroupRecommendationsInfoCollectionProvider
 				return InfoPage.of(Collections.emptyList(), pagination, 0);
 			}
 
-			List<BlogsEntry> blogsEntries = _getConfiguredBlogsEntries(
-				serviceContext);
-
-			if (blogsEntries.isEmpty()) {
-				blogsEntries = _getFallbackBlogsEntries(serviceContext);
-			}
+			List<BlogsEntry> blogsEntries = ItemCountUtil.select(
+				_getConfiguredBlogsEntries(serviceContext),
+				_configuration.itemCount(), _configuration.topUp(),
+				limit -> _getFallbackBlogsEntries(serviceContext, limit),
+				BlogsEntry::getEntryId, _log, "Blogs");
 
 			return InfoPageUtil.paginate(blogsEntries, pagination);
 		}
@@ -250,8 +250,11 @@ public class UserGroupRecommendationsInfoCollectionProvider
 		return _resolve(references, serviceContext.getScopeGroupId());
 	}
 
+	/**
+	 * @param limit how many to serve; zero or less means {@code fallbackLimit}
+	 */
 	private List<BlogsEntry> _getFallbackBlogsEntries(
-		ServiceContext serviceContext) {
+		ServiceContext serviceContext, int limit) {
 
 		String fallback = GetterUtil.getString(
 			_configuration.fallback(), FALLBACK_EMPTY);
@@ -260,7 +263,9 @@ public class UserGroupRecommendationsInfoCollectionProvider
 			return Collections.emptyList();
 		}
 
-		int limit = _configuration.fallbackLimit();
+		if (limit <= 0) {
+			limit = _configuration.fallbackLimit();
+		}
 
 		if (limit <= 0) {
 			limit = _DEFAULT_FALLBACK_LIMIT;

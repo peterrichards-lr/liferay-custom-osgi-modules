@@ -86,6 +86,40 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 	}
 
 	@Test
+	public void testAShortCuratedSetIsToppedUpWhenAskedTo() throws Exception {
+
+		// Issue #47: one of three references does not resolve, and the block
+		// must still show three.
+
+		_pushServiceContext(_USER_ID);
+		_givenUserGroups("Riders");
+		_givenEntries("alpha", "beta", "recent-one", "recent-two");
+
+		Mockito.when(
+			_blogsEntryLocalService.getGroupEntries(
+				Mockito.anyLong(), Mockito.<QueryDefinition<BlogsEntry>>any())
+		).thenReturn(
+			new ArrayList<>(
+				Arrays.asList(
+					_byUrlTitle.get("alpha"), _byUrlTitle.get("recent-one"),
+					_byUrlTitle.get("recent-two")))
+		);
+
+		_setField(
+			_infoCollectionProvider, "_configuration",
+			new StubConfiguration(
+				new String[] {"Riders=alpha,beta,missing"},
+				UserGroupRecommendationsInfoCollectionProvider.
+					STRATEGY_FIRST_MATCH,
+				UserGroupRecommendationsInfoCollectionProvider.FALLBACK_RECENT,
+				3, true));
+
+		Assert.assertEquals(
+			Arrays.asList("alpha", "beta", "recent-one"),
+			_urlTitles(_getCollectionInfoPage()));
+	}
+
+	@Test
 	public void testConfiguredOrderIsPreserved() throws Exception {
 		_pushServiceContext(_USER_ID);
 		_givenUserGroups("Riders");
@@ -333,6 +367,7 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 	private BlogsEntry _entry(String urlTitle) {
 		BlogsEntry blogsEntry = Mockito.mock(BlogsEntry.class);
 
+		Mockito.when(blogsEntry.getEntryId()).thenReturn(++_lastEntryId);
 		Mockito.when(blogsEntry.getUrlTitle()).thenReturn(urlTitle);
 		Mockito.when(
 			blogsEntry.getStatus()
@@ -431,6 +466,7 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 	private UserGroupRecommendationsInfoCollectionProvider
 		_infoCollectionProvider;
 	private Language _language;
+	private long _lastEntryId;
 	private UserGroupLocalService _userGroupLocalService;
 
 	/**
@@ -444,9 +480,18 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 			String[] userGroupEntries, String multiGroupStrategy,
 			String fallback) {
 
+			this(userGroupEntries, multiGroupStrategy, fallback, 0, false);
+		}
+
+		public StubConfiguration(
+			String[] userGroupEntries, String multiGroupStrategy,
+			String fallback, int itemCount, boolean topUp) {
+
 			_userGroupEntries = userGroupEntries;
 			_multiGroupStrategy = multiGroupStrategy;
 			_fallback = fallback;
+			_itemCount = itemCount;
+			_topUp = topUp;
 		}
 
 		@Override
@@ -465,6 +510,11 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 		}
 
 		@Override
+		public int itemCount() {
+			return _itemCount;
+		}
+
+		@Override
 		public String label() {
 			return "Recommended for Your Group";
 		}
@@ -480,11 +530,18 @@ public class UserGroupRecommendationsInfoCollectionProviderTest {
 		}
 
 		@Override
+		public boolean topUp() {
+			return _topUp;
+		}
+
+		@Override
 		public String[] userGroupEntries() {
 			return _userGroupEntries;
 		}
 
 		private final String _fallback;
+		private final int _itemCount;
+		private final boolean _topUp;
 		private final String _multiGroupStrategy;
 		private final String[] _userGroupEntries;
 

@@ -91,13 +91,12 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 					configuration.multiGroupStrategy(), "firstMatch"),
 				_userGroupLocalService);
 
-			List<ObjectEntry> objectEntries = _resolve(
-				references, serviceContext);
-
-			if (objectEntries.isEmpty()) {
-				objectEntries = _getFallbackObjectEntries(
-					configuration, serviceContext);
-			}
+			List<ObjectEntry> objectEntries = ItemCountUtil.select(
+				_resolve(references, serviceContext),
+				configuration.itemCount(), configuration.topUp(),
+				limit -> _getFallbackObjectEntries(
+					configuration, serviceContext, limit),
+				ObjectEntry::getObjectEntryId, _log, _configuredReference);
 
 			return InfoPageUtil.paginate(objectEntries, pagination);
 		}
@@ -130,10 +129,12 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 	 * no group -- a guest, or anyone outside the curated audiences -- rather
 	 * than showing an empty block.
 	 * </p>
+	 *
+	 * @param limit how many to serve; zero or less means {@code fallbackLimit}
 	 */
 	private List<ObjectEntry> _getFallbackObjectEntries(
 		UserGroupRecommendationsConfiguration configuration,
-		ServiceContext serviceContext) {
+		ServiceContext serviceContext, int limit) {
 
 		String fallback = GetterUtil.getString(
 			configuration.fallback(), UserGroupRecommendationsInfoCollectionProvider.FALLBACK_EMPTY);
@@ -142,7 +143,9 @@ public class ObjectEntryUserGroupRecommendationsInfoCollectionProvider
 			return Collections.emptyList();
 		}
 
-		int limit = configuration.fallbackLimit();
+		if (limit <= 0) {
+			limit = configuration.fallbackLimit();
+		}
 
 		if (limit <= 0) {
 			limit = _DEFAULT_FALLBACK_LIMIT;
