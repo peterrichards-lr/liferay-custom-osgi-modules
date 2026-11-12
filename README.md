@@ -771,12 +771,25 @@ then.
 
 #### Liferay versions
 
-Imports only `com.liferay.portal.kernel.log` and
-`com.liferay.portal.kernel.util`, so one artifact covers every line that
-exports those majors. Resolved against dxp-2026.q3.0; verified live on
-2026.q3.5 behind LDM's Traefik. With the bundle, restarts left the domain bare
-throughout. Without it, the same restart published `host:8080` 1.4 s after
-Tomcat started.
+One artifact for several lines, a deliberate exception to the per-line policy
+of #38. The defect exists on both 2026.q1 LTS and 2026.q3, and the module uses
+only API unchanged between them. `bnd.bnd` imports
+`com.liferay.portal.kernel.util` as `[96.7,101.0)`, from 96.7.0
+(2026.q1.14-lts) to 100.0.0 (2026.q3), and marks it `# span-lines:` so
+`check_import_ranges.py` accepts the range only while it contains the target
+line's export.
+
+Verified live at both ends, behind LDM's Traefik, restarting with
+`routes/default/dxp` emptied each time:
+
+| Line | Without the bundle | With it |
+|---|---|---|
+| 2026.q1.14-lts | `host:8080` 1.3 s after Tomcat started | bare throughout |
+| 2026.q3.5 | `host:8080` 1.4 s after Tomcat started | bare throughout |
+
+v3.6.0 shipped this bundle with the q3-only range `[100.0,101.0)`: the change
+widening it was pushed after its pull request had merged. Use v3.6.1 or later
+on 2026.q1.
 
 Remove it once the agent derives the secure flag from `web.server.protocol` on
 both paths.
@@ -998,4 +1011,4 @@ spans lines.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-11* | *Last Reviewed: 2026-11-11*
+*Last Updated: 2026-11-12* | *Last Reviewed: 2026-11-12*
