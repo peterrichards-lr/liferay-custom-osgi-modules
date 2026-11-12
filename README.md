@@ -787,6 +787,10 @@ Verified live at both ends, behind LDM's Traefik, restarting with
 | 2026.q1.14-lts | `host:8080` 1.3 s after Tomcat started | bare throughout |
 | 2026.q3.5 | `host:8080` 1.4 s after Tomcat started | bare throughout |
 
+v3.6.0 shipped this bundle with the q3-only range `[100.0,101.0)`: the change
+widening it was pushed after its pull request had merged. Use v3.6.1 or later
+on 2026.q1.
+
 Remove it once the agent derives the secure flag from `web.server.protocol` on
 both paths.
 
