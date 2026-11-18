@@ -705,19 +705,8 @@ public class CommerceSiteTypeResourceTest {
 		}
 
 		@Override
-		public ModifiableSettings setValues(ModifiableSettings modifiableSettings) {
-			return this;
-		}
-
-		@Override
 		public Collection<String> getModifiedKeys() {
 			return _modifiedKeys;
-		}
-
-		@Override
-		public void reset() {
-			_modifiedKeys.clear();
-			_values.clear();
 		}
 
 		@Override
