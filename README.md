@@ -224,20 +224,21 @@ deployment readiness probe to verify that the module is installed and responding
 
 #### Liferay versions
 
-Compiled against `dxp-2026.q3.0`, the workspace pin.
+Compiled against `dxp-2026.q4.0`, the workspace pin. For 2026.q3.0 use v3.6.1.
 
 The `Import-Package` ranges in `bnd.bnd` are bounded to the current major of each
 package and are **kernel-only** — `com.liferay.portal.kernel.{exception, json, log,
 model, security.permission, service, settings, util}`. Kernel-only does not mean
 line-agnostic: `model`, `service` and `util` all crossed a major between
-q1.12-lts and q3.0. Nothing from a commerce
+q1.12-lts and q3.0, and `model`, `security.permission`, `service`, `settings` and
+`util` again between q3.0 and q4.0. Nothing from a commerce
 bundle is imported: the channel is reached through `GroupLocalServiceUtil` and
 referred to by class-name string, and the site type is read through
 `GroupServiceSettingsLocator` and its company and system counterparts.
 
 **Runtime verification is outstanding.** The 13 unit tests exercise the resolution
 logic with mocks; they do not exercise OSGi wiring, so the ranges above are not yet
-confirmed at either end of any line span. Deploying to a `2026.q3.0` instance
+confirmed at either end of any line span. Deploying to a `2026.q4.0` instance
 and to one other line, and confirming the bundle resolves and
 `/o/commerce-site-type/status` answers, is what would settle it.
 
@@ -430,20 +431,20 @@ Intentionally unauthenticated, as a lightweight deployment readiness probe.
 
 #### Liferay versions
 
-Compiled against `dxp-2026.q3.0`, the workspace pin.
+Compiled against `dxp-2026.q4.0`, the workspace pin. For 2026.q3.0 use v3.6.1.
 
 Unlike `commerce-site-type`, this module cannot be kernel-only: the client
 extension registry has no kernel-facing API, so it imports
 `com.liferay.client.extension.{constants, model, service, type, type.manager,
 util}` alongside the kernel packages and `com.liferay.portal.vulcan.pagination`.
 This is a **per-DXP-line artifact** — see the resolution below. Note which half
-of that import set actually forced the q1.12-lts → q3.0 rebuild: every
-`com.liferay.client.extension.*` range still held on 2026.Q3.0, and the kernel
-packages did not.
+of that import set actually forced the q1.12-lts → q3.0 and q3.0 → q4.0
+rebuilds: every `com.liferay.client.extension.*` range held both times, and the
+kernel packages did not.
 
 **Runtime verification is outstanding.** The 22 unit tests exercise the
 composition, source-type and authorisation logic with mocks; they do not
-exercise OSGi wiring. Deploying to a `2026.q3.0` instance and confirming
+exercise OSGi wiring. Deploying to a `2026.q4.0` instance and confirming
 that the bundle resolves, that `/o/client-extension-entry/status` answers, and
 that the returned `portletId` matches the one Liferay registered, is what would
 settle it.
@@ -685,7 +686,7 @@ for the same reason.
 
 #### Liferay versions
 
-Compiled against `dxp-2026.q3.0`, the workspace pin.
+Compiled against `dxp-2026.q4.0`, the workspace pin. For 2026.q3.0 use v3.6.1.
 
 This is a **per-DXP-line artifact**. It cannot be kernel-only: `com.liferay.info.*`
 and `com.liferay.blogs.*` are application packages and move majors across lines.
@@ -771,15 +772,18 @@ then.
 
 #### Liferay versions
 
-One artifact for several lines, a deliberate exception to the per-line policy
-of #38. The defect exists on both 2026.q1 LTS and 2026.q3, and the module uses
-only API unchanged between them. `bnd.bnd` imports
-`com.liferay.portal.kernel.util` as `[96.7,101.0)`, from 96.7.0
-(2026.q1.14-lts) to 100.0.0 (2026.q3), and marks it `# span-lines:` so
-`check_import_ranges.py` accepts the range only while it contains the target
-line's export.
+Compiled against `dxp-2026.q4.0`, the workspace pin, and importing
+`com.liferay.portal.kernel.util` as `[106.0,107.0)`.
 
-Verified live at both ends, behind LDM's Traefik, restarting with
+**Use v3.6.1 on 2026.q1 LTS and 2026.q3.** That release is one artifact for
+both, a deliberate exception to the per-line policy of #38: the defect exists on
+both lines and the module uses only API unchanged between them, so `bnd.bnd`
+imported `com.liferay.portal.kernel.util` as `[96.7,101.0)`, from 96.7.0
+(2026.q1.14-lts) to 100.0.0 (2026.q3). 2026.q4 exports 106.0.0; extending the
+span over six more majors would claim compatibility nobody has tested (#52).
+
+**Not yet verified on 2026.q4**, including whether the agent still has the
+defect there. v3.6.1 was verified live at both ends, behind LDM's Traefik, restarting with
 `routes/default/dxp` emptied each time:
 
 | Line | Without the bundle | With it |
@@ -802,6 +806,7 @@ both paths.
 ./gradlew :modules:commerce-site-type:build
 ./gradlew :modules:client-extension-entry:build
 ./gradlew :modules:user-group-recommendations:build
+./gradlew :modules:dxp-routes-domain:build
 ```
 
 The JAR lands in `modules/<module-name>/build/libs/`.
@@ -899,7 +904,7 @@ at its default.
 
 ## Liferay version
 
-`gradle.properties` pins `liferay.workspace.product=dxp-2026.q3.0`.
+`gradle.properties` pins `liferay.workspace.product=dxp-2026.q4.0`.
 
 That pin is a **compile target, not a support range.**
 
@@ -928,6 +933,18 @@ Liferay DXP line has been settled with empirical evidence:
    | `com.liferay.portal.kernel.search` | `[22.0,23.0)` | `24.2.0` |
    | `com.liferay.portal.kernel.service` | `[52.0,53.0)` | `54.1.0` |
    | `com.liferay.portal.kernel.util` | `[96.0,97.0)` | `100.0.0` |
+
+   It happened again from `dxp-2026.q3.0` to `dxp-2026.q4.0` (#52): five kernel
+   packages crossed a major, alongside `com.liferay.fragment.service` (19),
+   `com.liferay.object.service` (91) and `com.liferay.depot.service` (4).
+
+   | Kernel package | q3.0 range | Exported on 2026.Q4.0 |
+   |---|---|---|
+   | `com.liferay.portal.kernel.model` | `[51.0,52.0)` | `52.2.0` |
+   | `com.liferay.portal.kernel.security.permission` | `[13.0,14.0)` | `15.0.0` |
+   | `com.liferay.portal.kernel.service` | `[54.1,55.0)` | `56.0.0` |
+   | `com.liferay.portal.kernel.settings` | `[6.1,7.0)` | `7.0.0` |
+   | `com.liferay.portal.kernel.util` | `[100.0,101.0)` | `106.0.0` |
 
    Only `com.liferay.portal.kernel.model` appeared in the deployment log, because
    the OSGi resolver reports the first unsatisfied requirement and stops. Read a
@@ -997,7 +1014,8 @@ records the reasoning.
 A bundle is a per-DXP-line artifact whenever it imports packages whose major
 versions differ across the lines it targets. On the evidence above, every module
 in this repository is one — a kernel-only import set does not buy line
-independence.
+independence. `dxp-routes-domain` spanned 2026.q1 LTS and q3 in v3.6.1, and that
+held only until the next line.
 
 This is a consequence of a module's imports, not a blanket rule of this repository.
 Check your own import set before assuming it applies — a module importing
@@ -1011,4 +1029,4 @@ spans lines.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-12* | *Last Reviewed: 2026-11-12*
+*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*

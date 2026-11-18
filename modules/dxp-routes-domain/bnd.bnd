@@ -3,15 +3,13 @@ Bundle-SymbolicName: com.liferay.custom.dxp.routes.domain
 
 # Ranges are hand-maintained and load-bearing; see issue #33.
 #
-# com.liferay.portal.kernel.util deliberately spans DXP lines, an exception to
-# the single-line consumer policy of #38. The defect exists on both 2026.q1 LTS
-# (util 96.7.0) and 2026.q3 (util 100.0.0), and LDM ships one artifact to both.
-# The module uses only API unchanged across them -- Portal#getPortalLocalPort
-# (boolean), PortalInetSocketAddressEventListener and two PropsValues fields --
-# and is verified live at both ends: 2026.q1.14-lts and 2026.q3.5.
-#
-# span-lines: com.liferay.portal.kernel.util
+# Single-line since #52, per the consumer policy of #38. v3.6.1 spanned
+# 2026.q1.14-lts (util 96.7.0) to 2026.q3 (util 100.0.0) with one artifact,
+# verified live at both ends; that jar remains the one for those lines. 2026.q4
+# exports util 106.0.0, and a span across six majors would claim compatibility
+# nobody has tested.
+
 Import-Package:\
 	com.liferay.portal.kernel.log;version="[10.0,11.0)",\
-	com.liferay.portal.kernel.util;version="[96.7,101.0)",\
+	com.liferay.portal.kernel.util;version="[106.0,107.0)",\
 	*
