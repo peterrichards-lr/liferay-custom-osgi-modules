@@ -104,11 +104,11 @@ No Liferay Headless REST or GraphQL API permits triggering a search reindex for 
 This module provides a secure JAX-RS whiteboard endpoint:
 - `POST /o/search-reindex/reindex/all`: Schedules reindexing across all portal company indexes.
 - `POST /o/search-reindex/reindex/{className}`: Schedules reindexing for the specified entity class.
-- `GET /o/search-reindex/status`: Healthcheck returning `{"status":"active","module":"search-reindex"}`.
+- `GET /o/search-reindex/status`: Healthcheck returning `{"status":"active","module":"search-reindex"}`. Requires authentication, and for an OAuth caller a read scope: a token holding only `.everything.write` gets an empty-body 403.
 
 #### Security & Permissions
 The endpoint is strictly gated:
-- Unauthenticated / guest requests return HTTP 401 `Unauthorized`.
+- Calls without credentials are rejected by Liferay with its own `text/html` 403 page, before they reach the module, because the application sets `auth.verifier.guest.allowed=false` ([#54](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/54)). The module's 401 for a guest user is a backstop behind that.
 - Non-omniadmin callers return HTTP 403 `Forbidden`.
 - OAuth callers require the `Custom.Search.Reindex` scope (derived from `osgi.jaxrs.name`), since deploying the bundle alone is not sufficient.
 
@@ -209,12 +209,18 @@ Site types supported:
 GET /o/commerce-site-type/status
 ```
 
-The `/status` healthcheck is intentionally unauthenticated as a lightweight
-deployment readiness probe to verify that the module is installed and responding.
+Requires authentication, like every other endpoint in this module. The
+application sets `auth.verifier.guest.allowed=false`, so Liferay rejects a call
+without credentials before it reaches the module, with its own `text/html` 403
+page rather than a 401
+([#54](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/54)).
+A readiness probe therefore needs credentials. Once Liferay admits the call,
+`/status` checks no permission and answers 200; an OAuth caller needs a read
+scope, since it is a `GET`.
 
 #### Security & Permissions
 
-- **Authentication**: Unauthenticated / guest requests return HTTP 401 `Unauthorized`.
+- **Authentication**: Calls without credentials never reach the module: Liferay answers them with its own `text/html` 403 page, because the application sets `auth.verifier.guest.allowed=false` ([#54](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/54)). The module's own 401 for a guest user is a backstop behind that, not a response an anonymous caller will see.
 - **Authorization (`GET`)**: Callers require omniadmin, company admin, or `VIEW` permission on the
   channel or its group (`com.liferay.commerce.product.model.CommerceChannel`). Unauthorized
   callers return HTTP 403 `Forbidden`.
@@ -383,12 +389,23 @@ but only to report `entryId` and to distinguish `sourceType`.
 GET /o/client-extension-entry/status
 ```
 
-Intentionally unauthenticated, as a lightweight deployment readiness probe.
+Requires authentication, like every other endpoint in this module. The
+application sets `auth.verifier.guest.allowed=false`, so Liferay rejects a call
+without credentials before it reaches the module, with its own `text/html` 403
+page rather than a 401
+([#54](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/54)).
+A readiness probe therefore needs credentials. Once Liferay admits the call,
+`/status` checks no permission and answers 200; an OAuth caller needs a read
+scope, since it is a `GET`.
 
 #### Security & permissions
 
-- **Authentication**: unauthenticated / guest requests return HTTP 401
-  `Unauthorized`.
+- **Authentication**: calls without credentials never reach the module.
+  Liferay answers them with its own `text/html` 403 page, because the
+  application sets `auth.verifier.guest.allowed=false`
+  ([#54](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/54)).
+  The module's own 401 for a guest user is a backstop behind that, not a
+  response an anonymous caller will see.
 - **Authorisation**: callers require one of
 
   1. omniadmin;
@@ -420,7 +437,9 @@ Intentionally unauthenticated, as a lightweight deployment readiness probe.
   `osgi.jaxrs.name`. Deploying the bundle is not sufficient — a service account
   or client extension must be granted the scope explicitly in its
   `client-extension.yaml`.
-- **Telling the two 403s apart**, since they need different remedies:
+- **Telling the three 403s apart**, since they need different remedies:
+  - **`text/html` error page** — the call carried no credentials, or none
+    Liferay accepted. Authenticate.
   - **empty body** — Liferay's access control rejected the call before it
     reached the module. The OAuth scope is missing.
   - **JSON body with `"error": "Forbidden"`** — the module rejected the call.

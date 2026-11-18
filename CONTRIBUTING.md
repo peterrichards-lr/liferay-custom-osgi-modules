@@ -53,13 +53,15 @@ A module exposing an endpoint must apply consistent authorisation principles:
    - Return HTTP 401 `Unauthorized` for unauthenticated or guest callers (`user == null || user.isDefaultUser()`).
    - Return HTTP 403 `Forbidden` only for authenticated users lacking the required permission.
    - Never collapse these into a single 403; doing so makes unauthenticated service account calls indistinguishable from permission failures.
+   - Know what sits in front of that check. An application declaring `auth.verifier.guest.allowed=false`, as every module here with an endpoint does, has calls without credentials rejected by Liferay with its own `text/html` 403 page before they reach the module, so the module's 401 is a backstop rather than what an anonymous caller sees ([#54](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/54)). Document the 403 page, not the 401, as the anonymous response.
 3. **Attribute mutations to the caller**:
    - Any module performing writes or mutations must record the authenticated caller's identity (e.g. `user.getUserId()`) in audit logs and entity updates, never attributing changes to an entity's original creator.
 4. **Service accounts and client extensions**:
    - Prioritise correctness over convenience: when client extensions authenticate via machine service accounts, administrators must grant those accounts scoped permissions rather than relying on blanket administrative bypasses.
 5. **Deployment healthchecks**:
-   - Lightweight status probes (e.g. `/status`) are intentionally unauthenticated, returning high-level deployment readiness without exposing sensitive metadata.
+   - Lightweight status probes (e.g. `/status`) check no permission, returning high-level deployment readiness without exposing sensitive metadata.
+   - They are **not** reachable anonymously: they share the application's `auth.verifier.guest.allowed=false`, so a probe needs credentials, and an OAuth probe a read scope. Making one public would mean a separate guest-allowed application, which widens what Liferay's access control lets through and needs that reviewed first (#54).
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-09-04* | *Last Reviewed: 2026-09-04*
+*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*
