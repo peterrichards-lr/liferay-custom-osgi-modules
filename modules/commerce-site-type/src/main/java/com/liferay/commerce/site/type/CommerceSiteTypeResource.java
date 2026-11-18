@@ -38,7 +38,9 @@ import jakarta.ws.rs.core.Response;
 public class CommerceSiteTypeResource {
 
 	/**
-	 * Unauthenticated deployment liveness/readiness probe.
+	 * Deployment liveness/readiness probe. Checks no permission, but is not
+	 * anonymous: the application sets {@code auth.verifier.guest.allowed=false},
+	 * so Liferay rejects a call without credentials before it reaches here.
 	 * Confirms the bundle is active and whiteboard endpoint is mounted.
 	 */
 	@GET

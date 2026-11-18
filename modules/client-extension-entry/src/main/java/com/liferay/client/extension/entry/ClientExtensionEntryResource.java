@@ -141,7 +141,9 @@ public class ClientExtensionEntryResource {
 	}
 
 	/**
-	 * Unauthenticated deployment liveness/readiness probe.
+	 * Deployment liveness/readiness probe. Checks no permission, but is not
+	 * anonymous: the application sets {@code auth.verifier.guest.allowed=false},
+	 * so Liferay rejects a call without credentials before it reaches here.
 	 * Confirms the bundle is active and the whiteboard endpoint is mounted.
 	 */
 	@GET
