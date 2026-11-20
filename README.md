@@ -63,6 +63,54 @@ FragmentEntryLinkLocalService.updateFragmentEntryLink(
 which routes through the service layer, so cache invalidation, model listeners
 and indexing are Liferay's concern rather than the caller's.
 
+#### Try the Headless route first ([#57](https://github.com/peterrichards-lr/liferay-custom-osgi-modules/issues/57))
+
+Measured live on 2026.q1.14-lts and 2026.q3.0, and read from the 2026.q4.0
+bytecode: headless-admin-site's per-element `PUT` rewrites a fragment's
+configuration on a published page, so this module isn't needed when that route
+is open:
+
+```
+PUT /o/headless-admin-site/v1.0/sites/{siteERC}/page-specifications/{specERC}/page-experiences/{specERC}-default/page-elements/{elementERC}
+```
+
+> [!WARNING]
+> **Before 2026.q4.0 this needs a `dev` feature flag.** On 2026.q1.14-lts and
+> 2026.q3.0 both of these must be set, or every call answers
+> `400 UnsupportedOperationException`:
+>
+> ```properties
+> feature.flag.LPD-35443=true
+> feature.flag.LPD-74328=true
+> ```
+>
+> `LPD-35443` is a `beta` flag on q1.14-lts and a `release` flag on q3.0.
+> `LPD-74328` is a **`dev` flag on both: Liferay doesn't support it**, and it can
+> change or disappear in any update. That's accepted for local and demo
+> environments (LDM's case). Don't rely on it in production; use this module
+> there. On 2026.q4.0 neither flag is checked.
+
+How to use it:
+
+- **`PUT` on the published spec's ERC, not the draft's.** A content page has two
+  specs, `{erc}` and `{erc}-draft`. A `PUT` on the draft only changes the draft.
+- **Don't rely on `POST .../page-specifications/{erc}/publish`.** On all three
+  lines it is the generated stub: it answers `204` for any ERC, including one
+  that doesn't exist, and does nothing.
+- **The `PUT` replaces the element; it doesn't merge.** Read it, change the
+  value, and send the whole element back. The element ERC is the same in both
+  specs.
+- **The rendered page goes stale.** The `PUT` writes the database, but the page
+  keeps rendering the old value until Liferay restarts. This module goes through
+  `FragmentEntryLinkLocalService`, which has no such lag.
+- **List experiences from the `page-specifications` response.**
+  `GET .../page-experiences` answers `400` on 2026.q3.0 even with both flags set.
+
+The `400 "Updating published site initializer page specifications is not
+supported"` described above applies to the page-level `site-pages` `PUT`. The
+per-element `PUT` has no such guard on any of these lines. Not yet measured: a
+live run on 2026.q4.0, and a page that was created by a site initializer.
+
 #### Upstream Investigation & Feature Flag
 
 Both configuration alternatives were investigated and ruled out:
@@ -1048,4 +1096,4 @@ spans lines.
 
 <!-- markdownlint-disable MD049 -->
 ---
-*Last Updated: 2026-11-18* | *Last Reviewed: 2026-11-18*
+*Last Updated: 2026-11-20* | *Last Reviewed: 2026-11-20*
