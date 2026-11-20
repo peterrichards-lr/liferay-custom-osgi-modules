@@ -57,6 +57,15 @@ import org.osgi.service.jaxrs.whiteboard.JaxrsWhiteboardConstants;
  * update permissions against the target layout.
  * </p>
  *
+ * <p>
+ * Try headless-admin-site first (#57): a per-element {@code PUT} on the
+ * published page specification rewrites the same configuration. On
+ * 2026.q1.14-lts and 2026.q3.0 it needs {@code feature.flag.LPD-35443} and
+ * {@code feature.flag.LPD-74328}, and the second is an unsupported
+ * {@code dev} flag. 2026.q4.0 checks neither. That route also leaves the
+ * rendered page stale until a restart; this one doesn't. See the README.
+ * </p>
+ *
  * @author peterrichards
  */
 @Component(
